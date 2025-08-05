@@ -18,10 +18,14 @@ class UniversalAffiliate(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=0xAFF1C0DE, force_registration=True)
         self.config.register_guild(
-            enabled=True, param_name="aff", param_value="moncode",
-            mode="blocklist", allowlist=set(), blocklist=set(DEFAULT_IGNORED_DOMAINS),
-            repost=False
-        )
+    enabled=True,
+    param_name="aff",
+    param_value="moncode",
+    mode="blocklist",  # all | allowlist | blocklist
+    allowlist=[],
+    blocklist=list(DEFAULT_IGNORED_DOMAINS),
+    repost=False
+)
 
     @staticmethod
     def _normalize_domain(netloc: str) -> str:
