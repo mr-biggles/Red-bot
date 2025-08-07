@@ -19,12 +19,12 @@ class StudiosportAffiliate(commands.Cog):
             "utm_source": "bandolovers",
             "utm_medium": "affiliation", 
             "utm_campaign": "affi-bandolovers",
-            "message": "N'hésite pas à passer par notre lien partenaire StudiosPort ! 🎯"
+            "message": "N'hésite pas à passer par notre lien partenaire StudioSport ! 🎯"
         }
         
         self.config.register_guild(**default_guild)
         
-        # Pattern pour détecter les liens StudiosPort
+        # Pattern pour détecter les liens StudioSport
         self.studiosport_pattern = re.compile(
             r'https?://(?:www\.)?studiosport\.fr/[^\s]+',
             re.IGNORECASE
@@ -33,7 +33,7 @@ class StudiosportAffiliate(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """
-        Écoute tous les messages pour détecter les liens StudiosPort
+        Écoute tous les messages pour détecter les liens StudioSport
         """
         # Ignore les messages du bot
         if message.author.bot:
@@ -61,7 +61,7 @@ class StudiosportAffiliate(commands.Cog):
                 description=f"{custom_message}\n\n🔗 **Lien partenaire:**\n{affiliate_link}",
                 color=discord.Color.blue()
             )
-            embed.set_footer(text="Lien d'affiliation StudiosPort")
+            embed.set_footer(text="Lien d'affiliation StudioSport")
             
             try:
                 await message.reply(embed=embed, mention_author=False)
@@ -88,7 +88,7 @@ class StudiosportAffiliate(commands.Cog):
     @commands.admin_or_permissions(manage_guild=True)
     async def studiosport_settings(self, ctx):
         """
-        Configuration du COG StudiosPort
+        Configuration du COG StudioSport
         """
         pass
     
@@ -101,14 +101,14 @@ class StudiosportAffiliate(commands.Cog):
         await self.config.guild(ctx.guild).enabled.set(not current)
         
         status = "activé" if not current else "désactivé"
-        await ctx.send(f"✅ Le COG StudiosPort a été **{status}** sur ce serveur.")
+        await ctx.send(f"✅ Le COG StudioSport a été **{status}** sur ce serveur.")
     
     @studiosport_settings.command(name="message")
     async def set_message(self, ctx, *, message: str):
         """
         Définit le message personnalisé qui accompagne le lien
         
-        Exemple: [p]studiosport message Profite de notre partenariat avec StudiosPort !
+        Exemple: [p]studiosport message Profite de notre partenariat avec StudioSport !
         """
         await self.config.guild(ctx.guild).message.set(message)
         await ctx.send(f"✅ Message mis à jour : `{message}`")
@@ -132,7 +132,7 @@ class StudiosportAffiliate(commands.Cog):
     @studiosport_settings.command(name="test")
     async def test_link(self, ctx, url: str = None):
         """
-        Teste la transformation d'un lien StudiosPort
+        Teste la transformation d'un lien StudioSport
         
         Exemple: [p]studiosport test https://www.studiosport.fr/exemple
         """
@@ -140,7 +140,7 @@ class StudiosportAffiliate(commands.Cog):
             url = "https://www.studiosport.fr/exemple-produit.html"
         
         if not self.studiosport_pattern.match(url):
-            await ctx.send("❌ Ce n'est pas un lien StudiosPort valide.")
+            await ctx.send("❌ Ce n'est pas un lien StudioSport valide.")
             return
         
         affiliate_link = await self.add_utm_params(ctx.guild, url)
@@ -164,7 +164,7 @@ class StudiosportAffiliate(commands.Cog):
         status = "✅ Activé" if config["enabled"] else "❌ Désactivé"
         
         embed = discord.Embed(
-            title="📊 Configuration StudiosPort",
+            title="📊 Configuration StudioSport",
             color=discord.Color.blue()
         )
         embed.add_field(name="Statut", value=status, inline=True)
