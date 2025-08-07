@@ -6,7 +6,7 @@ from redbot.core.config import Config
 
 class StudiosportAffiliate(commands.Cog):
     """
-    COG pour transformer automatiquement les liens StudiosPort en liens d'affiliation
+    COG pour transformer automatiquement les liens StudioSport en liens d'affiliation
     """
     
     def __init__(self, bot: Red):
