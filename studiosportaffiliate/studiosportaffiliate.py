@@ -1,158 +1,179 @@
-import discord
-from redbot.core import commands, Config
 import re
-
+import discord
+from redbot.core import commands
+from redbot.core.bot import Red
+from redbot.core.config import Config
 
 class StudiosportAffiliate(commands.Cog):
     """
-    COG pour poster automatiquement un lien affilié quand quelqu'un poste un lien studiosport.fr
+    COG pour transformer automatiquement les liens StudiosPort en liens d'affiliation
     """
     
-    def __init__(self, bot):
+    def __init__(self, bot: Red):
         self.bot = bot
-        self.config = Config.get_conf(self, identifier=1234567890, force_registration=True)
+        self.config = Config.get_conf(self, identifier=1234567890)
         
+        # Configuration par défaut
         default_guild = {
-            "affiliate_link": "https://www.studiosport.fr/?utm_source=bandolovers&utm_medium=affiliation&utm_campaign=affi-bandolovers",
             "enabled": True,
-            "channels": []  # Liste vide = tous les canaux
+            "utm_source": "bandolovers",
+            "utm_medium": "affiliation", 
+            "utm_campaign": "affi-bandolovers",
+            "message": "N'hésite pas à passer par notre lien partenaire StudiosPort ! 🎯"
         }
         
         self.config.register_guild(**default_guild)
         
+        # Pattern pour détecter les liens StudiosPort
+        self.studiosport_pattern = re.compile(
+            r'https?://(?:www\.)?studiosport\.fr/[^\s]+',
+            re.IGNORECASE
+        )
+    
     @commands.Cog.listener()
-    async def on_message(self, message):
-        """Surveille les messages pour détecter les liens studiosport.fr"""
-        
-        # Ignorer les messages du bot
+    async def on_message(self, message: discord.Message):
+        """
+        Écoute tous les messages pour détecter les liens StudiosPort
+        """
+        # Ignore les messages du bot
         if message.author.bot:
             return
             
-        # Vérifier si le COG est activé pour ce serveur
+        # Ignore les messages sans serveur (MP)
         if not message.guild:
             return
             
-        enabled = await self.config.guild(message.guild).enabled()
-        if not enabled:
+        # Vérifie si le COG est activé sur ce serveur
+        if not await self.config.guild(message.guild).enabled():
             return
             
-        # Vérifier si le canal est autorisé (si la liste n'est pas vide)
-        allowed_channels = await self.config.guild(message.guild).channels()
-        if allowed_channels and message.channel.id not in allowed_channels:
-            return
+        # Cherche les liens StudiosPort dans le message
+        links = self.studiosport_pattern.findall(message.content)
         
-        # Regex pour détecter les liens studiosport.fr
-        studiosport_pattern = r'https?://(?:www\.)?studiosport\.fr[^\s]*'
-        
-        if re.search(studiosport_pattern, message.content, re.IGNORECASE):
-            affiliate_link = await self.config.guild(message.guild).affiliate_link()
+        if links:
+            # Traite le premier lien trouvé
+            original_link = links[0]
+            affiliate_link = await self.add_utm_params(message.guild, original_link)
+            custom_message = await self.config.guild(message.guild).message()
             
-            # Message de réponse
-            response_message = (
-                "N'oublie pas de passer par notre lien affilié, si tu as déjà fait ton panier, "
-                "n'hésite pas à le refaire après avoir cliqué sur le lien. Merci.\n\n"
-                f"{affiliate_link}"
+            # Envoie la réponse
+            embed = discord.Embed(
+                description=f"{custom_message}\n\n🔗 **Lien partenaire:**\n{affiliate_link}",
+                color=discord.Color.blue()
             )
+            embed.set_footer(text="Lien d'affiliation StudiosPort")
             
             try:
-                await message.channel.send(response_message)
+                await message.reply(embed=embed, mention_author=False)
             except discord.HTTPException:
-                pass  # Ignorer les erreurs d'envoi
+                # Fallback si les embeds ne fonctionnent pas
+                await message.reply(f"{custom_message}\n{affiliate_link}", mention_author=False)
     
-    @commands.group(name="studiosport")
-    @commands.admin()
-    async def studiosport_group(self, ctx):
-        """Commandes pour configurer StudiosportAffiliate (Admin seulement)"""
+    async def add_utm_params(self, guild: discord.Guild, url: str) -> str:
+        """
+        Ajoute les paramètres UTM au lien
+        """
+        utm_source = await self.config.guild(guild).utm_source()
+        utm_medium = await self.config.guild(guild).utm_medium()
+        utm_campaign = await self.config.guild(guild).utm_campaign()
+        
+        # Vérifie si l'URL a déjà des paramètres
+        separator = "&" if "?" in url else "?"
+        
+        utm_params = f"utm_source={utm_source}&utm_medium={utm_medium}&utm_campaign={utm_campaign}"
+        
+        return f"{url}{separator}{utm_params}"
+    
+    @commands.group(name="studiosport", aliases=["sp"])
+    @commands.admin_or_permissions(manage_guild=True)
+    async def studiosport_settings(self, ctx):
+        """
+        Configuration du COG StudiosPort
+        """
         pass
     
-    @studiosport_group.command(name="setlink")
-    async def set_affiliate_link(self, ctx, *, link: str):
-        """Définir le lien affilié (Admin seulement)"""
-        await self.config.guild(ctx.guild).affiliate_link.set(link)
-        await ctx.send(f"✅ Lien affilié configuré : {link}")
-    
-    @studiosport_group.command(name="getlink")
-    async def get_affiliate_link(self, ctx):
-        """Voir le lien affilié actuel"""
-        link = await self.config.guild(ctx.guild).affiliate_link()
-        await ctx.send(f"📎 Lien affilié actuel : {link}")
-    
-    @studiosport_group.command(name="toggle")
-    async def toggle_affiliate(self, ctx):
-        """Activer/désactiver le COG"""
+    @studiosport_settings.command(name="toggle")
+    async def toggle_studiosport(self, ctx):
+        """
+        Active ou désactive le COG sur ce serveur
+        """
         current = await self.config.guild(ctx.guild).enabled()
         await self.config.guild(ctx.guild).enabled.set(not current)
+        
         status = "activé" if not current else "désactivé"
-        await ctx.send(f"✅ StudiosportAffiliate {status}")
+        await ctx.send(f"✅ Le COG StudiosPort a été **{status}** sur ce serveur.")
     
-    @studiosport_group.command(name="addchannel")
-    async def add_channel(self, ctx, channel: discord.TextChannel = None):
-        """Ajouter un canal autorisé (laisser vide pour le canal actuel)"""
-        if not channel:
-            channel = ctx.channel
-            
-        async with self.config.guild(ctx.guild).channels() as channels:
-            if channel.id not in channels:
-                channels.append(channel.id)
-                await ctx.send(f"✅ Canal {channel.mention} ajouté à la liste")
-            else:
-                await ctx.send(f"❌ Canal {channel.mention} déjà dans la liste")
-    
-    @studiosport_group.command(name="removechannel")
-    async def remove_channel(self, ctx, channel: discord.TextChannel = None):
-        """Retirer un canal de la liste autorisée"""
-        if not channel:
-            channel = ctx.channel
-            
-        async with self.config.guild(ctx.guild).channels() as channels:
-            if channel.id in channels:
-                channels.remove(channel.id)
-                await ctx.send(f"✅ Canal {channel.mention} retiré de la liste")
-            else:
-                await ctx.send(f"❌ Canal {channel.mention} n'était pas dans la liste")
-    
-    @studiosport_group.command(name="listchannels")
-    async def list_channels(self, ctx):
-        """Voir la liste des canaux autorisés"""
-        channels = await self.config.guild(ctx.guild).channels()
+    @studiosport_settings.command(name="message")
+    async def set_message(self, ctx, *, message: str):
+        """
+        Définit le message personnalisé qui accompagne le lien
         
-        if not channels:
-            await ctx.send("📋 Aucun canal spécifique configuré (fonctionne sur tous les canaux)")
+        Exemple: [p]studiosport message Profite de notre partenariat avec StudiosPort !
+        """
+        await self.config.guild(ctx.guild).message.set(message)
+        await ctx.send(f"✅ Message mis à jour : `{message}`")
+    
+    @studiosport_settings.command(name="utm")
+    async def set_utm(self, ctx, source: str, medium: str, campaign: str):
+        """
+        Configure les paramètres UTM
+        
+        Exemple: [p]studiosport utm bandolovers affiliation affi-bandolovers
+        """
+        await self.config.guild(ctx.guild).utm_source.set(source)
+        await self.config.guild(ctx.guild).utm_medium.set(medium)
+        await self.config.guild(ctx.guild).utm_campaign.set(campaign)
+        
+        await ctx.send(f"✅ Paramètres UTM mis à jour :\n"
+                      f"• Source: `{source}`\n"
+                      f"• Medium: `{medium}`\n"
+                      f"• Campaign: `{campaign}`")
+    
+    @studiosport_settings.command(name="test")
+    async def test_link(self, ctx, url: str = None):
+        """
+        Teste la transformation d'un lien StudiosPort
+        
+        Exemple: [p]studiosport test https://www.studiosport.fr/exemple
+        """
+        if not url:
+            url = "https://www.studiosport.fr/exemple-produit.html"
+        
+        if not self.studiosport_pattern.match(url):
+            await ctx.send("❌ Ce n'est pas un lien StudiosPort valide.")
             return
-            
-        channel_mentions = []
-        for channel_id in channels:
-            channel = ctx.guild.get_channel(channel_id)
-            if channel:
-                channel_mentions.append(channel.mention)
-            else:
-                channel_mentions.append(f"Canal supprimé ({channel_id})")
         
-        await ctx.send(f"📋 Canaux autorisés :\n" + "\n".join(channel_mentions))
-    
-    @studiosport_group.command(name="clearchannels")
-    async def clear_channels(self, ctx):
-        """Vider la liste des canaux (fonctionne sur tous les canaux)"""
-        await self.config.guild(ctx.guild).channels.set([])
-        await ctx.send("✅ Liste des canaux vidée. Le COG fonctionne maintenant sur tous les canaux.")
-    
-    @studiosport_group.command(name="status")
-    async def show_status(self, ctx):
-        """Afficher la configuration actuelle"""
-        enabled = await self.config.guild(ctx.guild).enabled()
-        link = await self.config.guild(ctx.guild).affiliate_link()
-        channels = await self.config.guild(ctx.guild).channels()
+        affiliate_link = await self.add_utm_params(ctx.guild, url)
         
-        status_text = "✅ Activé" if enabled else "❌ Désactivé"
-        channels_text = f"{len(channels)} canaux spécifiques" if channels else "Tous les canaux"
-        
-        embed = discord.Embed(title="StudiosportAffiliate - Configuration", color=0x00ff00 if enabled else 0xff0000)
-        embed.add_field(name="Statut", value=status_text, inline=True)
-        embed.add_field(name="Canaux", value=channels_text, inline=True)
-        embed.add_field(name="Lien affilié", value=link, inline=False)
+        embed = discord.Embed(
+            title="🔧 Test de transformation de lien",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Lien original", value=f"```{url}```", inline=False)
+        embed.add_field(name="Lien transformé", value=f"```{affiliate_link}```", inline=False)
         
         await ctx.send(embed=embed)
-
+    
+    @studiosport_settings.command(name="status")
+    async def show_status(self, ctx):
+        """
+        Affiche la configuration actuelle
+        """
+        config = await self.config.guild(ctx.guild).all()
+        
+        status = "✅ Activé" if config["enabled"] else "❌ Désactivé"
+        
+        embed = discord.Embed(
+            title="📊 Configuration StudiosPort",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Statut", value=status, inline=True)
+        embed.add_field(name="Message", value=f"`{config['message']}`", inline=False)
+        embed.add_field(name="UTM Source", value=f"`{config['utm_source']}`", inline=True)
+        embed.add_field(name="UTM Medium", value=f"`{config['utm_medium']}`", inline=True)
+        embed.add_field(name="UTM Campaign", value=f"`{config['utm_campaign']}`", inline=True)
+        
+        await ctx.send(embed=embed)
 
 def setup(bot):
     bot.add_cog(StudiosportAffiliate(bot))
