@@ -14,7 +14,7 @@ class SocialThreadOpener(commands.Cog):
     Crée automatiquement des threads pour les liens YouTube, TikTok et Instagram
     """
 
-    __version__ = "1.0.4"
+    __version__ = "1.1.0"
 
     def __init__(self, bot: Red):
         self.bot = bot
@@ -34,12 +34,18 @@ class SocialThreadOpener(commands.Cog):
             },
             "fetch_titles": True,
             "fallback_format": "Discussion: {platform}",
-            "max_title_length": 80
+            "max_title_length": 80,
+            # Nouvelles options pour la modération
+            "link_only_mode": False,
+            "delete_non_links": False,
+            "warning_message": "❌ Ce canal est réservé aux liens YouTube, TikTok et Instagram uniquement!",
+            "whitelist_roles": [],  # Rôles exemptés de la restriction
+            "allow_media": True,  # Permet les fichiers/images
         }
         
         self.config.register_guild(**default_guild)
         
-        # Expressions régulières améliorées pour YouTube
+        # Expressions régulières améliorées
         self.url_patterns = {
             "youtube": re.compile(
                 r'(?:https?://)?(?:www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]+)',
@@ -54,8 +60,13 @@ class SocialThreadOpener(commands.Cog):
                 re.IGNORECASE
             )
         }
+        
+        # Pattern pour détecter les URLs générales
+        self.general_url_pattern = re.compile(
+            r'https?://[^\s<>"{}|\\^`\[\]]+',
+            re.IGNORECASE
+        )
 
-    # [Toutes tes commandes exactement pareilles]
     @commands.group(name="socialthread", aliases=["st"])
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
@@ -101,6 +112,60 @@ class SocialThreadOpener(commands.Cog):
             else:
                 await ctx.send(f"⚠️ Canal {channel.mention} n'était pas surveillé!")
 
+    # 🆕 NOUVELLES COMMANDES DE MODÉRATION
+    @social_thread.command(name="linkonly")
+    async def toggle_link_only(self, ctx, channel: discord.TextChannel = None):
+        """Active/désactive le mode 'liens uniquement' pour un canal surveillé"""
+        if channel is None:
+            channel = ctx.channel
+        
+        channels = await self.config.guild(ctx.guild).channels()
+        if channel.id not in channels:
+            await ctx.send(f"❌ {channel.mention} n'est pas un canal surveillé! Ajoutez-le d'abord avec `{ctx.prefix}st addchannel`")
+            return
+        
+        current = await self.config.guild(ctx.guild).delete_non_links()
+        await self.config.guild(ctx.guild).delete_non_links.set(not current)
+        
+        status = "activé" if not current else "désactivé"
+        await ctx.send(f"🔒 Mode 'liens uniquement' {status} pour tous les canaux surveillés!\n"
+                      f"{'Les messages sans liens sociaux seront supprimés.' if not current else 'Les messages sans liens sociaux ne seront plus supprimés.'}")
+
+    @social_thread.command(name="setwarning")
+    async def set_warning_message(self, ctx, *, message: str):
+        """Définit le message d'avertissement pour les messages supprimés"""
+        await self.config.guild(ctx.guild).warning_message.set(message)
+        await ctx.send(f"✅ Message d'avertissement défini:\n```{message}```")
+
+    @social_thread.command(name="addrole")
+    async def add_whitelist_role(self, ctx, role: discord.Role):
+        """Ajoute un rôle à la liste des exemptions (peut poster sans liens)"""
+        async with self.config.guild(ctx.guild).whitelist_roles() as roles:
+            if role.id not in roles:
+                roles.append(role.id)
+                await ctx.send(f"✅ Rôle {role.mention} ajouté aux exemptions!")
+            else:
+                await ctx.send(f"⚠️ Rôle {role.mention} déjà dans les exemptions!")
+
+    @social_thread.command(name="removerole")
+    async def remove_whitelist_role(self, ctx, role: discord.Role):
+        """Retire un rôle de la liste des exemptions"""
+        async with self.config.guild(ctx.guild).whitelist_roles() as roles:
+            if role.id in roles:
+                roles.remove(role.id)
+                await ctx.send(f"✅ Rôle {role.mention} retiré des exemptions!")
+            else:
+                await ctx.send(f"⚠️ Rôle {role.mention} n'était pas dans les exemptions!")
+
+    @social_thread.command(name="allowmedia")
+    async def toggle_allow_media(self, ctx):
+        """Active/désactive l'autorisation des fichiers/images sans liens"""
+        current = await self.config.guild(ctx.guild).allow_media()
+        await self.config.guild(ctx.guild).allow_media.set(not current)
+        
+        status = "autorisés" if not current else "non autorisés"
+        await ctx.send(f"📎 Fichiers et images {status} dans les canaux 'liens uniquement'!")
+
     @social_thread.command(name="channels")
     async def list_channels(self, ctx):
         """Liste les canaux surveillés"""
@@ -138,10 +203,9 @@ class SocialThreadOpener(commands.Cog):
         """
         Définit le format du nom des threads (pour YouTube seulement)
         Variables disponibles: {title}, {platform}, {author}
-        Exemple: {title} | par {author}
         """
         await self.config.guild(ctx.guild).thread_name_format.set(format_string)
-        await ctx.send(f"✅ Format des noms de threads défini: `{format_string}`\n📝 Note: Ce format s'applique seulement à YouTube. Instagram et TikTok utilisent 'Thread de [nom]'")
+        await ctx.send(f"✅ Format des noms de threads défini: `{format_string}`\n📝 Note: Ce format s'applique seulement à YouTube.")
 
     @social_thread.command(name="titles")
     async def toggle_titles(self, ctx):
@@ -149,7 +213,7 @@ class SocialThreadOpener(commands.Cog):
         current = await self.config.guild(ctx.guild).fetch_titles()
         await self.config.guild(ctx.guild).fetch_titles.set(not current)
         status = "activée" if not current else "désactivée"
-        await ctx.send(f"✅ Récupération des titres YouTube {status}!\n📝 Note: Instagram et TikTok utilisent toujours 'Thread de [nom]'")
+        await ctx.send(f"✅ Récupération des titres YouTube {status}!")
 
     @social_thread.command(name="delay")
     async def set_delay(self, ctx, seconds: int):
@@ -188,6 +252,18 @@ class SocialThreadOpener(commands.Cog):
         )
         
         embed.add_field(
+            name="Mode liens uniquement",
+            value="🔒 Activé" if guild_config.get("delete_non_links", False) else "🔓 Désactivé",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Fichiers autorisés",
+            value="📎 Oui" if guild_config.get("allow_media", True) else "📎 Non",
+            inline=True
+        )
+        
+        embed.add_field(
             name="Délai",
             value=f"{guild_config['delay']} secondes",
             inline=True
@@ -205,18 +281,32 @@ class SocialThreadOpener(commands.Cog):
             inline=False
         )
         
-        embed.add_field(
-            name="Titres YouTube",
-            value="✅ Activée" if guild_config["fetch_titles"] else "❌ Désactivée",
-            inline=True
-        )
-
-        embed.add_field(
-            name="Longueur max titres",
-            value=f"{guild_config.get('max_title_length', 80)} caractères",
-            inline=True
-        )
+        if guild_config.get("delete_non_links", False):
+            embed.add_field(
+                name="Message d'avertissement",
+                value=f"```{guild_config.get('warning_message', 'Message par défaut')}```",
+                inline=False
+            )
         
+        # Rôles exemptés
+        whitelist_roles = guild_config.get("whitelist_roles", [])
+        if whitelist_roles:
+            roles = []
+            for role_id in whitelist_roles[:3]:
+                role = ctx.guild.get_role(role_id)
+                if role:
+                    roles.append(role.mention)
+            if roles:
+                roles_text = ", ".join(roles)
+                if len(whitelist_roles) > 3:
+                    roles_text += f" +{len(whitelist_roles) - 3} autres"
+                embed.add_field(
+                    name="Rôles exemptés",
+                    value=roles_text,
+                    inline=False
+                )
+        
+        # Plateformes et canaux (code existant)
         platforms_status = []
         for platform, enabled in guild_config["platforms"].items():
             status = "✅" if enabled else "❌"
@@ -231,24 +321,29 @@ class SocialThreadOpener(commands.Cog):
         channels_ids = guild_config["channels"]
         if channels_ids:
             channels = []
-            for channel_id in channels_ids[:5]:
+            for channel_id in channels_ids[:3]:
                 channel = ctx.guild.get_channel(channel_id)
                 if channel:
                     channels.append(channel.mention)
             
             if channels:
                 channels_text = "\n".join(channels)
-                if len(channels_ids) > 5:
-                    channels_text += f"\n... et {len(channels_ids) - 5} autres"
+                if len(channels_ids) > 3:
+                    channels_text += f"\n... +{len(channels_ids) - 3} autres"
                 embed.add_field(
                     name="Canaux surveillés",
                     value=channels_text,
                     inline=True
                 )
         
+        embed.add_field(
+            name="Nouvelles commandes",
+            value="`linkonly` - Mode liens uniquement\n`setwarning` - Message d'avertissement\n`addrole/removerole` - Rôles exemptés\n`allowmedia` - Autoriser médias",
+            inline=False
+        )
+        
         await ctx.send(embed=embed)
 
-    # Commande pour tester manuellement la récupération de titre
     @social_thread.command(name="testtitle")
     async def test_title(self, ctx, url: str):
         """Teste la récupération de titre pour une URL YouTube"""
@@ -266,7 +361,7 @@ class SocialThreadOpener(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        """Écoute les messages pour détecter les liens"""
+        """Écoute les messages pour détecter les liens ET modérer si nécessaire"""
         if message.author.bot or not message.guild:
             return
         
@@ -284,19 +379,23 @@ class SocialThreadOpener(commands.Cog):
         if not message.channel.permissions_for(message.guild.me).create_public_threads:
             return
         
-        # Détecte les plateformes dans le message
+        # 🆕 VÉRIFICATION DU MODE "LIENS UNIQUEMENT"
+        if guild_config.get("delete_non_links", False):
+            should_delete = await self._should_delete_message(message, guild_config)
+            if should_delete:
+                return  # Message supprimé, on arrête le traitement
+        
+        # Continue avec la logique normale de détection de liens
         detected_platforms = []
         detected_urls = {}
         
-        # Detection améliorée pour YouTube
+        # Detection des plateformes
         for platform, pattern in self.url_patterns.items():
             if guild_config["platforms"][platform]:
                 if platform == "youtube":
-                    # Recherche plus précise pour YouTube
                     youtube_matches = re.findall(r'(?:https?://)?(?:www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]+)', message.content, re.IGNORECASE)
                     if youtube_matches:
                         detected_platforms.append(platform)
-                        # Reconstruit l'URL complète
                         if "youtu.be/" in youtube_matches[0][0]:
                             detected_urls[platform] = f"https://www.youtube.com/watch?v={youtube_matches[0][1]}"
                         elif "youtube.com/shorts/" in youtube_matches[0][0]:
@@ -319,12 +418,78 @@ class SocialThreadOpener(commands.Cog):
         
         await self._create_thread_simplified(message, detected_platforms, detected_urls, guild_config)
 
+    async def _should_delete_message(self, message: discord.Message, config: dict) -> bool:
+        """Détermine si un message doit être supprimé dans le mode 'liens uniquement'"""
+        try:
+            # Vérifie les permissions (admin, modo, etc.)
+            if message.author.guild_permissions.manage_messages or message.author.guild_permissions.administrator:
+                return False
+            
+            # Vérifie les rôles exemptés
+            whitelist_roles = config.get("whitelist_roles", [])
+            if whitelist_roles:
+                user_roles = [role.id for role in message.author.roles]
+                if any(role_id in user_roles for role_id in whitelist_roles):
+                    print(f"👑 {message.author.display_name} a un rôle exempté")
+                    return False
+            
+            # Vérifie si le message contient des liens de médias sociaux supportés
+            has_social_link = False
+            for platform, pattern in self.url_patterns.items():
+                if config["platforms"][platform] and pattern.search(message.content):
+                    has_social_link = True
+                    break
+            
+            if has_social_link:
+                print(f"✅ Message avec lien social autorisé de {message.author.display_name}")
+                return False
+            
+            # Vérifie si le message contient des fichiers/médias (si autorisé)
+            if config.get("allow_media", True) and (message.attachments or message.embeds):
+                print(f"📎 Message avec média autorisé de {message.author.display_name}")
+                return False
+            
+            # Si on arrive ici, le message doit être supprimé
+            print(f"🗑️ Message de {message.author.display_name} va être supprimé (pas de lien social)")
+            
+            # Supprime le message
+            await message.delete()
+            
+            # Crée une vue avec bouton pour le message éphémère
+            view = DismissView()
+            warning_msg = config.get("warning_message", "❌ Ce canal est réservé aux liens YouTube, TikTok et Instagram uniquement!")
+            
+            # Envoie le message éphémère (visible seulement par l'utilisateur)
+            try:
+                await message.channel.send(
+                    f"{message.author.mention} {warning_msg}",
+                    view=view,
+                    delete_after=15  # Supprime automatiquement après 15 secondes
+                )
+            except discord.HTTPException:
+                # Si l'envoi échoue, utilise la méthode de fallback
+                temp_msg = await message.channel.send(f"{message.author.mention} {warning_msg}")
+                await asyncio.sleep(10)
+                try:
+                    await temp_msg.delete()
+                except:
+                    pass
+            
+            return True
+            
+        except discord.HTTPException as e:
+            print(f"❌ Erreur lors de la suppression: {e}")
+            return False
+        except Exception as e:
+            print(f"💥 Erreur inattendue lors de la modération: {e}")
+            return False
+
+    # [Garde toutes tes méthodes existantes: _get_youtube_title, _clean_youtube_title, _create_thread_simplified]
     async def _get_youtube_title(self, url: str) -> Optional[str]:
         """Récupère le titre YouTube avec plusieurs méthodes de fallback"""
         try:
             print(f"🎬 Récupération titre YouTube: {url}")
             
-            # Headers pour simuler un navigateur réel
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -339,7 +504,6 @@ class SocialThreadOpener(commands.Cog):
             }
             
             timeout = aiohttp.ClientTimeout(total=20)
-            
             connector = aiohttp.TCPConnector(ssl=False)
             
             async with aiohttp.ClientSession(timeout=timeout, headers=headers, connector=connector) as session:
@@ -347,28 +511,18 @@ class SocialThreadOpener(commands.Cog):
                     print(f"📡 Status HTTP: {response.status}")
                     
                     if response.status != 200:
-                        print(f"❌ Erreur HTTP {response.status}")
                         return None
                     
-                    # Lire le contenu
                     try:
                         html = await response.text(encoding='utf-8')
                     except:
                         html = await response.text(encoding='latin-1')
                     
-                    print(f"📄 Taille HTML: {len(html)} caractères")
-                    
-                    # Méthodes d'extraction dans l'ordre de préférence
                     patterns = [
-                        # Meta property og:title (le plus fiable)
                         (r'<meta\s+property=["\']og:title["\']\s+content=["\']([^"\']*)["\']', "og:title"),
-                        # Meta name title
                         (r'<meta\s+name=["\']title["\']\s+content=["\']([^"\']*)["\']', "meta title"),
-                        # JSON-LD structured data
                         (r'"videoDetails":\s*{[^}]*"title":\s*"([^"]*)"', "videoDetails JSON"),
-                        # Page title
                         (r'<title>([^<]+?)\s*(?:-\s*YouTube)?</title>', "page title"),
-                        # Alternate patterns
                         (r'<meta\s+property="twitter:title"\s+content="([^"]*)"', "twitter:title"),
                         (r'"title":{"runs":\[{"text":"([^"]*)"', "runs title"),
                     ]
@@ -379,37 +533,15 @@ class SocialThreadOpener(commands.Cog):
                             for match in matches:
                                 title = match.strip()
                                 if title and len(title) > 3:
-                                    # Nettoie le titre
                                     cleaned_title = self._clean_youtube_title(title)
                                     if len(cleaned_title) > 3:
                                         print(f"✅ Titre trouvé via {method_name}: '{cleaned_title}'")
                                         return cleaned_title
                     
-                    # Si aucun pattern ne fonctionne, cherche toute balise title
-                    title_search = re.search(r'<title[^>]*>([^<]+)</title>', html, re.IGNORECASE)
-                    if title_search:
-                        raw_title = title_search.group(1).strip()
-                        cleaned_title = self._clean_youtube_title(raw_title)
-                        if len(cleaned_title) > 3:
-                            print(f"✅ Titre trouvé via title fallback: '{cleaned_title}'")
-                            return cleaned_title
-                    
-                    print("❌ Aucun titre trouvé dans le HTML")
-                    # Debug: sauvegarde un extrait pour analyse
-                    if "youtube" in html.lower():
-                        print("📝 Page semble être YouTube mais titre non trouvé")
-                        # Recherche toute occurrence de "title" pour debug
-                        title_occurrences = re.findall(r'title[^>]*>([^<]{10,100})', html, re.IGNORECASE)
-                        for i, occurrence in enumerate(title_occurrences[:3]):
-                            print(f"🔍 Debug title {i+1}: {occurrence[:50]}...")
-                    
                     return None
                     
-        except asyncio.TimeoutError:
-            print("⏰ Timeout lors de la récupération du titre YouTube")
-            return None
         except Exception as e:
-            print(f"💥 Erreur récupération titre YouTube: {type(e).__name__}: {e}")
+            print(f"💥 Erreur récupération titre YouTube: {e}")
             return None
 
     def _clean_youtube_title(self, title: str) -> str:
@@ -417,11 +549,9 @@ class SocialThreadOpener(commands.Cog):
         if not title:
             return ""
         
-        # Décode les entités HTML
         import html
         title = html.unescape(title)
         
-        # Supprime les suffixes YouTube communs
         suffixes_to_remove = [
             r'\s*-\s*YouTube\s*$',
             r'\s*\|\s*YouTube\s*$',
@@ -432,9 +562,8 @@ class SocialThreadOpener(commands.Cog):
         for suffix in suffixes_to_remove:
             title = re.sub(suffix, '', title, flags=re.IGNORECASE)
         
-        # Nettoie les espaces et caractères indésirables
         title = re.sub(r'\s+', ' ', title).strip()
-        title = re.sub(r'^[^\w]+|[^\w]+$', '', title)  # Supprime la ponctuation au début/fin
+        title = re.sub(r'^[^\w]+|[^\w]+$', '', title)
         
         return title
 
@@ -445,22 +574,16 @@ class SocialThreadOpener(commands.Cog):
             author_name = message.author.display_name
             
             print(f"🧵 Création thread pour: {platforms}")
-            print(f"📋 Config fetch_titles: {config['fetch_titles']}")
             
-            # Logique simplifiée selon la plateforme
             if "youtube" in platforms and config["fetch_titles"]:
-                # Pour YouTube : essaie de récupérer le titre
                 url = urls.get("youtube")
-                print(f"🎬 Traitement YouTube avec URL: {url}")
                 if url:
                     title = await self._get_youtube_title(url)
                     if title and len(title.strip()) > 0:
-                        # Tronque si nécessaire
                         max_length = config.get('max_title_length', 80)
                         if len(title) > max_length:
                             title = title[:max_length-3] + "..."
                         
-                        # Utilise le format configuré
                         try:
                             thread_name = config["thread_name_format"].format(
                                 title=title,
@@ -469,27 +592,17 @@ class SocialThreadOpener(commands.Cog):
                             )
                         except KeyError:
                             thread_name = title
-                        
-                        print(f"🎬 Thread YouTube avec titre: '{thread_name}'")
-                    else:
-                        print(f"❌ Aucun titre récupéré, utilisation du fallback")
             
-            # Si pas de titre YouTube ou autres plateformes
             if not thread_name or len(thread_name.strip()) == 0:
                 if len(platforms) == 1:
                     platform = platforms[0]
                     if platform in ["instagram", "tiktok"]:
                         thread_name = f"Thread de {author_name}"
-                        print(f"📱 Thread {platform}: '{thread_name}'")
                     elif platform == "youtube":
                         thread_name = f"Vidéo de {author_name}"
-                        print(f"🎬 Thread YouTube (fallback): '{thread_name}'")
                 else:
-                    # Plusieurs plateformes
                     thread_name = f"Thread de {author_name}"
-                    print(f"🔀 Thread multi-plateformes: '{thread_name}'")
             
-            # Nettoie le nom pour Discord
             thread_name = re.sub(r'[<>:"/\\|?*]', '', thread_name)
             thread_name = re.sub(r'\s+', ' ', thread_name).strip()
             
@@ -499,15 +612,11 @@ class SocialThreadOpener(commands.Cog):
             if len(thread_name) < 1:
                 thread_name = f"Thread de {author_name}"
             
-            print(f"🎯 Nom final: '{thread_name}'")
-            
-            # Crée le thread
             thread = await message.create_thread(
                 name=thread_name,
                 auto_archive_duration=1440
             )
             
-            # Message d'introduction adapté
             if len(platforms) == 1:
                 platform = platforms[0]
                 if platform == "youtube":
@@ -525,16 +634,25 @@ class SocialThreadOpener(commands.Cog):
             await thread.send(intro)
             print(f"🎉 Thread créé avec succès!")
             
-        except discord.HTTPException as e:
-            print(f"💥 Erreur création thread: {e}")
         except Exception as e:
-            print(f"💥 Erreur inattendue: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"💥 Erreur création thread: {e}")
 
     def cog_unload(self):
         """Nettoyage lors du déchargement du cog"""
         pass
+
+
+# 🆕 CLASSE POUR LE BOUTON "FERMER" SUR LES MESSAGES D'AVERTISSEMENT
+class DismissView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)  # 5 minutes
+    
+    @discord.ui.button(label="✖️ Fermer", style=discord.ButtonStyle.secondary)
+    async def dismiss_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            await interaction.message.delete()
+        except:
+            await interaction.response.send_message("Message supprimé!", ephemeral=True)
 
 
 async def setup(bot):
