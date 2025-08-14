@@ -421,4 +421,3 @@ class DismissView(discord.ui.View):
 
 async def setup(bot):
     await bot.add_cog(SocialThreadOpener(bot))
-🆕 Modifications apportées :
