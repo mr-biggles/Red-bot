@@ -11,10 +11,10 @@ from redbot.core.utils.chat_formatting import humanize_list
 
 class SocialThreadOpener(commands.Cog):
     """
-    Crée automatiquement des threads pour les liens YouTube, TikTok et Instagram
+    Crée automatiquement des threads pour les liens YouTube, TikTok, Instagram et Facebook
     """
 
-    __version__ = "1.1.1"
+    __version__ = "1.2.0"
 
     def __init__(self, bot: Red):
         self.bot = bot
@@ -30,14 +30,15 @@ class SocialThreadOpener(commands.Cog):
             "platforms": {
                 "youtube": True,
                 "tiktok": True,
-                "instagram": True
+                "instagram": True,
+                "facebook": True
             },
             "fetch_titles": True,
             "fallback_format": "Discussion: {platform}",
             "max_title_length": 80,
             "link_only_mode": False,
             "delete_non_links": False,
-            "warning_message": "❌ Ce canal est réservé aux liens YouTube, TikTok et Instagram uniquement!",
+            "warning_message": "❌ Ce canal est réservé aux liens YouTube, TikTok, Instagram et Facebook uniquement!",
             "whitelist_roles": [],
             "allow_media": True,
         }
@@ -55,6 +56,10 @@ class SocialThreadOpener(commands.Cog):
             ),
             "instagram": re.compile(
                 r'(?:https?://)?(?:www\.)?(instagram\.com/(?:p|reel)/[a-zA-Z0-9_-]+)',
+                re.IGNORECASE
+            ),
+            "facebook": re.compile(
+                r'(?:https?://)?(?:www\.)?(facebook\.com/(?:watch/\?v=\d+|[^/\s]+/videos/\d+|[^/\s]+/posts/\d+|share/v\?v=\d+)|fb\.watch/[a-zA-Z0-9_-]+)',
                 re.IGNORECASE
             )
         }
@@ -124,6 +129,13 @@ class SocialThreadOpener(commands.Cog):
         embed.add_field(name="🔧 État", value="✅ Activé" if config["enabled"] else "❌ Désactivé", inline=True)
         embed.add_field(name="🔒 Mode liens uniques", value="✅ Activé" if config["delete_non_links"] else "❌ Désactivé", inline=True)
         embed.add_field(name="📎 Médias autorisés", value="✅ Oui" if config["allow_media"] else "❌ Non", inline=True)
+        
+        # Affichage des plateformes supportées
+        platforms_status = []
+        for platform, enabled in config["platforms"].items():
+            status = "✅" if enabled else "❌"
+            platforms_status.append(f"{status} {platform.title()}")
+        embed.add_field(name="📱 Plateformes", value="\n".join(platforms_status), inline=True)
         
         if config["channels"]:
             channels = [f"<#{ch}>" for ch in config["channels"]]
@@ -380,6 +392,8 @@ class SocialThreadOpener(commands.Cog):
                     intro = f"Thread créé pour discuter de ce post Instagram partagé par {message.author.mention}!"
                 elif platform == "tiktok":
                     intro = f"Thread créé pour discuter de cette vidéo TikTok partagée par {message.author.mention}!"
+                elif platform == "facebook":
+                    intro = f"Thread créé pour discuter de ce contenu Facebook partagé par {message.author.mention}!"
                 else:
                     intro = f"Thread créé pour discuter du contenu {platform.title()} partagé par {message.author.mention}!"
             else:
@@ -407,3 +421,4 @@ class DismissView(discord.ui.View):
 
 async def setup(bot):
     await bot.add_cog(SocialThreadOpener(bot))
+🆕 Modifications apportées :
