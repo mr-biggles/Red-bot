@@ -1,4 +1,3 @@
-Je vois le problème ! Le code essaie déjà de récupérer les titres, mais les patterns regex et les méthodes pour Instagram ne sont pas optimaux. Voici une version améliorée qui devrait mieux fonctionner pour récupérer les titres/descriptions :
 import re
 import asyncio
 import aiohttp
@@ -35,7 +34,7 @@ class SocialThreadOpener(commands.Cog):
             },
             "fetch_titles": True,
             "fallback_format": "Discussion: {platform}",
-            "max_title_length": 80  # Nouvelle option pour limiter la longueur des titres
+            "max_title_length": 80
         }
         
         self.config.register_guild(**default_guild)
@@ -56,7 +55,6 @@ class SocialThreadOpener(commands.Cog):
             )
         }
 
-    # [Garde tous tes autres commands exactement comme ils sont...]
     @commands.group(name="socialthread", aliases=["st"])
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
