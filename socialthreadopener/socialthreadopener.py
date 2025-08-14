@@ -1,4 +1,3 @@
-Ah ! Il y a une erreur de syntaxe dans le fichier - j'ai laissé du texte français au début. Voici le code corrigé :
 import re
 import asyncio
 import aiohttp
