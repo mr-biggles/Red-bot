@@ -1,6 +1,8 @@
+Je vois le problème ! Le code essaie déjà de récupérer les titres, mais les patterns regex et les méthodes pour Instagram ne sont pas optimaux. Voici une version améliorée qui devrait mieux fonctionner pour récupérer les titres/descriptions :
 import re
 import asyncio
 import aiohttp
+import json
 from typing import Optional
 import discord
 from redbot.core import commands, Config, checks
@@ -13,7 +15,7 @@ class SocialThreadOpener(commands.Cog):
     Crée automatiquement des threads pour les liens YouTube, TikTok et Instagram
     """
 
-    __version__ = "1.0.0"
+    __version__ = "1.0.1"
 
     def __init__(self, bot: Red):
         self.bot = bot
@@ -25,22 +27,23 @@ class SocialThreadOpener(commands.Cog):
             "enabled": False,
             "channels": [],
             "thread_name_format": "{title}",
-            "delay": 2,  # Délai en secondes avant création du thread
+            "delay": 2,
             "platforms": {
                 "youtube": True,
                 "tiktok": True,
                 "instagram": True
             },
-            "fetch_titles": True,  # Récupère automatiquement les titres
-            "fallback_format": "Discussion: {platform}"  # Format si titre non trouvé
+            "fetch_titles": True,
+            "fallback_format": "Discussion: {platform}",
+            "max_title_length": 80  # Nouvelle option pour limiter la longueur des titres
         }
         
         self.config.register_guild(**default_guild)
         
-        # Expressions régulières pour détecter les liens
+        # Expressions régulières pour détecter les liens (améliorées)
         self.url_patterns = {
             "youtube": re.compile(
-                r'(?:https?://)?(?:www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[a-zA-Z0-9_-]+',
+                r'(?:https?://)?(?:www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]+)',
                 re.IGNORECASE
             ),
             "tiktok": re.compile(
@@ -48,11 +51,12 @@ class SocialThreadOpener(commands.Cog):
                 re.IGNORECASE
             ),
             "instagram": re.compile(
-                r'(?:https?://)?(?:www\.)?(instagram\.com/p/[a-zA-Z0-9_-]+|instagram\.com/reel/[a-zA-Z0-9_-]+)',
+                r'(?:https?://)?(?:www\.)?(instagram\.com/(?:p|reel)/[a-zA-Z0-9_-]+)',
                 re.IGNORECASE
             )
         }
 
+    # [Garde tous tes autres commands exactement comme ils sont...]
     @commands.group(name="socialthread", aliases=["st"])
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
@@ -158,6 +162,16 @@ class SocialThreadOpener(commands.Cog):
         await self.config.guild(ctx.guild).delay.set(seconds)
         await ctx.send(f"✅ Délai défini à {seconds} secondes!")
 
+    @social_thread.command(name="titlelength")
+    async def set_title_length(self, ctx, length: int):
+        """Définit la longueur maximum des titres (20-80 caractères)"""
+        if length < 20 or length > 80:
+            await ctx.send("❌ La longueur doit être entre 20 et 80 caractères!")
+            return
+        
+        await self.config.guild(ctx.guild).max_title_length.set(length)
+        await ctx.send(f"✅ Longueur maximum des titres définie à {length} caractères!")
+
     @social_thread.command(name="settings")
     async def show_settings(self, ctx):
         """Affiche la configuration actuelle"""
@@ -197,6 +211,12 @@ class SocialThreadOpener(commands.Cog):
             value="✅ Activée" if guild_config["fetch_titles"] else "❌ Désactivée",
             inline=True
         )
+
+        embed.add_field(
+            name="Longueur max des titres",
+            value=f"{guild_config.get('max_title_length', 80)} caractères",
+            inline=True
+        )
         
         platforms_status = []
         for platform, enabled in guild_config["platforms"].items():
@@ -212,7 +232,7 @@ class SocialThreadOpener(commands.Cog):
         channels_ids = guild_config["channels"]
         if channels_ids:
             channels = []
-            for channel_id in channels_ids[:5]:  # Limite à 5 pour l'affichage
+            for channel_id in channels_ids[:5]:
                 channel = ctx.guild.get_channel(channel_id)
                 if channel:
                     channels.append(channel.mention)
@@ -232,128 +252,207 @@ class SocialThreadOpener(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """Écoute les messages pour détecter les liens"""
-        # Ignore les bots et les messages sans guild
         if message.author.bot or not message.guild:
             return
         
         guild_config = await self.config.guild(message.guild).all()
         
-        # Vérifie si le cog est activé
         if not guild_config["enabled"]:
             return
         
-        # Vérifie si le canal est surveillé
         if guild_config["channels"] and message.channel.id not in guild_config["channels"]:
             return
         
-        # Vérifie si c'est un thread (on ne crée pas de threads dans les threads)
         if isinstance(message.channel, discord.Thread):
             return
         
-        # Vérifie les permissions
         if not message.channel.permissions_for(message.guild.me).create_public_threads:
             return
         
         # Détecte les plateformes dans le message
         detected_platforms = []
+        detected_urls = {}
+        
         for platform, pattern in self.url_patterns.items():
-            if guild_config["platforms"][platform] and pattern.search(message.content):
-                detected_platforms.append(platform)
+            if guild_config["platforms"][platform]:
+                match = pattern.search(message.content)
+                if match:
+                    detected_platforms.append(platform)
+                    detected_urls[platform] = match.group(0)
         
         if not detected_platforms:
             return
         
-        # Attend le délai configuré
         if guild_config["delay"] > 0:
             await asyncio.sleep(guild_config["delay"])
         
-        # Crée le thread
-        await self._create_thread(message, detected_platforms, guild_config)
+        await self._create_thread(message, detected_platforms, detected_urls, guild_config)
 
     async def _get_video_title(self, url: str, platform: str) -> Optional[str]:
-        """Récupère le titre d'une vidéo depuis l'URL"""
+        """Récupère le titre d'une vidéo depuis l'URL avec des méthodes améliorées"""
         try:
-            timeout = aiohttp.ClientTimeout(total=10)
+            # Assure-toi que l'URL est complète
+            if not url.startswith(('http://', 'https://')):
+                url = 'https://' + url
+
+            timeout = aiohttp.ClientTimeout(total=15)
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
             }
             
+            print(f"Tentative de récupération du titre pour: {url} (plateforme: {platform})")
+            
             async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                async with session.get(url) as response:
+                async with session.get(url, allow_redirects=True) as response:
                     if response.status != 200:
+                        print(f"Status HTTP {response.status} pour {url}")
                         return None
                     
                     html = await response.text()
+                    print(f"HTML récupéré, longueur: {len(html)}")
                     
-                    # Recherche du titre selon la plateforme
+                    title = None
+                    
                     if platform == "youtube":
-                        # YouTube - plusieurs méthodes de fallback
-                        patterns = [
-                            r'"title":"([^"]+)"',
-                            r'<title>([^<]+)</title>',
-                            r'"videoDetails":{"videoId":"[^"]+","title":"([^"]+)"',
-                            r'<meta name="title" content="([^"]*)"'
-                        ]
+                        title = await self._extract_youtube_title(html)
                     elif platform == "tiktok":
-                        patterns = [
-                            r'"desc":"([^"]+)"',
-                            r'<title>([^<]+)</title>',
-                            r'"title":"([^"]+)"'
-                        ]
+                        title = await self._extract_tiktok_title(html, url)
                     elif platform == "instagram":
-                        patterns = [
-                            r'"edge_media_to_caption":{"edges":\[{"node":{"text":"([^"]*)"',
-                            r'<title>([^<]+)</title>',
-                            r'"title":"([^"]+)"'
-                        ]
+                        title = await self._extract_instagram_title(html)
                     
-                    for pattern in patterns:
-                        match = re.search(pattern, html, re.IGNORECASE)
-                        if match:
-                            title = match.group(1).strip()
-                            # Nettoie le titre
-                            title = re.sub(r'\\u[0-9a-fA-F]{4}', '', title)  # Remove unicode escapes
-                            title = title.replace('\\n', ' ').replace('\\t', ' ')
-                            title = re.sub(r'\s+', ' ', title).strip()
-                            
-                            # Filtre les titres YouTube génériques
-                            if platform == "youtube" and ("YouTube" in title or len(title) < 3):
-                                continue
-                            
-                            if title and len(title) > 0:
-                                return title
+                    if title:
+                        # Nettoie le titre
+                        title = self._clean_title(title, platform)
+                        print(f"Titre trouvé: {title}")
+                        return title
+                    else:
+                        print(f"Aucun titre trouvé pour {platform}")
                     
                     return None
                     
         except Exception as e:
-            print(f"Erreur lors de la récupération du titre: {e}")
+            print(f"Erreur lors de la récupération du titre pour {url}: {e}")
             return None
-    async def _create_thread(self, message: discord.Message, platforms: list, config: dict):
+
+    async def _extract_youtube_title(self, html: str) -> Optional[str]:
+        """Extrait le titre d'une vidéo YouTube"""
+        patterns = [
+            # Pattern principal pour YouTube
+            r'"title":{"runs":\[{"text":"([^"]+)"}',
+            r'"title":"([^"]+)".*"lengthSeconds"',
+            r'<meta property="og:title" content="([^"]*)"',
+            r'<title>([^<]+)</title>',
+            r'"videoDetails":{"videoId":"[^"]*","title":"([^"]*)"',
+            r'ytInitialPlayerResponse[^{]*{"videoDetails":{"[^"]*","title":"([^"]*)"'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
+            if match:
+                title = match.group(1).strip()
+                if title and len(title) > 3 and "YouTube" not in title:
+                    return title
+        
+        return None
+
+    async def _extract_tiktok_title(self, html: str, url: str) -> Optional[str]:
+        """Extrait le titre/description d'une vidéo TikTok"""
+        patterns = [
+            # Patterns pour TikTok
+            r'"desc":"([^"]+)"',
+            r'"description":"([^"]+)"',
+            r'<meta property="og:description" content="([^"]*)"',
+            r'<meta name="description" content="([^"]*)"',
+            r'"title":"([^"]+)"',
+            r'<title>([^<]+)</title>'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, html, re.IGNORECASE)
+            if match:
+                title = match.group(1).strip()
+                if title and len(title) > 3 and not title.startswith('@'):
+                    return title
+        
+        return None
+
+    async def _extract_instagram_title(self, html: str) -> Optional[str]:
+        """Extrait le titre/description d'un post Instagram"""
+        patterns = [
+            # Patterns pour Instagram
+            r'<meta property="og:title" content="([^"]*)"',
+            r'<meta name="description" content="([^"]*)"',
+            r'"edge_media_to_caption":{"edges":\[{"node":{"text":"([^"]*)"',
+            r'"caption":"([^"]*)"',
+            r'"title":"([^"]*)"',
+            r'<title>([^<]+)</title>'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, html, re.IGNORECASE)
+            if match:
+                title = match.group(1).strip()
+                # Filtre les titres Instagram génériques
+                generic_terms = ['Instagram', 'Login', 'Sign up', 'Create an account']
+                if title and len(title) > 5 and not any(term in title for term in generic_terms):
+                    return title
+        
+        return None
+
+    def _clean_title(self, title: str, platform: str) -> str:
+        """Nettoie et formate le titre"""
+        # Décode les caractères HTML
+        title = title.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"')
+        
+        # Supprime les caractères d'échappement
+        title = title.replace('\\n', ' ').replace('\\t', ' ').replace('\n', ' ').replace('\t', ' ')
+        title = re.sub(r'\\u[0-9a-fA-F]{4}', '', title)
+        
+        # Nettoie les espaces multiples
+        title = re.sub(r'\s+', ' ', title).strip()
+        
+        # Supprime les suffixes de plateforme
+        if platform == "youtube":
+            title = re.sub(r'\s*-\s*YouTube\s*$', '', title, re.IGNORECASE)
+        elif platform == "tiktok":
+            title = re.sub(r'\s*\|\s*TikTok\s*$', '', title, re.IGNORECASE)
+        
+        return title
+
+    async def _create_thread(self, message: discord.Message, platforms: list, urls: dict, config: dict):
         """Crée un thread pour le message"""
         try:
             thread_name = ""
+            max_length = config.get('max_title_length', 80)
             
             # Récupère le titre si activé
             if config["fetch_titles"]:
-                # Trouve la première URL dans le message
                 for platform in platforms:
-                    pattern = self.url_patterns[platform]
-                    match = pattern.search(message.content)
-                    if match:
-                        url = match.group(0)
-                        # Assure-toi que l'URL est complète
-                        if not url.startswith(('http://', 'https://')):
-                            url = 'https://' + url
+                    if platform in urls:
+                        url = urls[platform]
+                        print(f"Tentative de récupération du titre pour {platform}: {url}")
                         
                         title = await self._get_video_title(url, platform)
                         if title:
+                            # Tronque le titre si nécessaire
+                            if len(title) > max_length:
+                                title = title[:max_length-3] + "..."
+                            
                             # Utilise le format principal avec le titre
                             thread_name = config["thread_name_format"].format(
                                 title=title,
                                 platform=platform.title(),
                                 author=message.author.display_name
                             )
+                            print(f"Titre formaté: {thread_name}")
                             break
+                        else:
+                            print(f"Impossible de récupérer le titre pour {platform}")
             
             # Si pas de titre trouvé, utilise le format de fallback
             if not thread_name:
@@ -362,29 +461,35 @@ class SocialThreadOpener(commands.Cog):
                     platform=platform_name,
                     author=message.author.display_name
                 )
+                print(f"Utilisation du format de fallback: {thread_name}")
             
-            # Nettoie et limite la longueur du nom
-            thread_name = re.sub(r'[<>:"/\\|?*]', '', thread_name)  # Caractères interdits
-            thread_name = re.sub(r'\s+', ' ', thread_name).strip()  # Espaces multiples
+            # Nettoie et limite la longueur du nom du thread
+            thread_name = re.sub(r'[<>:"/\\|?*]', '', thread_name)
+            thread_name = re.sub(r'\s+', ' ', thread_name).strip()
             
             if len(thread_name) > 100:
                 thread_name = thread_name[:97] + "..."
             
+            if len(thread_name) < 1:
+                thread_name = f"Discussion {platforms[0].title()}"
+            
+            print(f"Nom final du thread: {thread_name}")
+            
             # Crée le thread
             thread = await message.create_thread(
                 name=thread_name,
-                auto_archive_duration=1440  # 24 heures
+                auto_archive_duration=1440
             )
             
-            # Message d'introduction optionnel
+            # Message d'introduction
             platform_list = ", ".join([p.title() for p in platforms])
             intro_message = f"Thread créé automatiquement pour discuter du contenu {platform_list} partagé par {message.author.mention}!"
             
             await thread.send(intro_message)
+            print(f"Thread créé avec succès: {thread_name}")
             
         except discord.HTTPException as e:
-            # Log l'erreur sans faire planter le bot
-            print(f"Erreur lors de la création du thread: {e}")
+            print(f"Erreur HTTP lors de la création du thread: {e}")
         except Exception as e:
             print(f"Erreur inattendue dans Social Thread Opener: {e}")
 
