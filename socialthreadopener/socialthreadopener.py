@@ -4,47 +4,28 @@ import aiohttp
 import json
 from typing import Optional
 import discord
-from redbot.core import commands, Config, checks
+from redbot.core import commands, Config
 from redbot.core.bot import Red
-from redbot.core.utils.chat_formatting import humanize_list
-
 
 class SocialThreadOpener(commands.Cog):
-    """
-    Crée automatiquement des threads pour les liens YouTube, TikTok, Instagram et Facebook
-    """
-
-    __version__ = "1.2.0"
-
+    """Ouvre automatiquement des threads pour les liens sociaux"""
+    
     def __init__(self, bot: Red):
         self.bot = bot
-        self.config = Config.get_conf(
-            self, identifier=208903205982044161, force_registration=True
-        )
+        self.config = Config.get_conf(self, identifier=1234567890)
         
+        # Configuration par défaut
         default_guild = {
-            "enabled": False,
-            "channels": [],
-            "thread_name_format": "{title}",
-            "delay": 2,
-            "platforms": {
-                "youtube": True,
-                "tiktok": True,
-                "instagram": True,
-                "facebook": True
-            },
-            "fetch_titles": True,
-            "fallback_format": "Discussion: {platform}",
-            "max_title_length": 80,
-            "link_only_mode": False,
-            "delete_non_links": False,
-            "warning_message": "❌ Ce canal est réservé aux liens YouTube, TikTok, Instagram et Facebook uniquement!",
-            "whitelist_roles": [],
-            "allow_media": True,
+            "enabled_channels": [],
+            "youtube": {"enabled": True, "emoji": "📺"},
+            "tiktok": {"enabled": True, "emoji": "🎵"},
+            "instagram": {"enabled": True, "emoji": "📸"},
+            "facebook": {"enabled": True, "emoji": "👤"}
         }
         
         self.config.register_guild(**default_guild)
         
+        # Patterns pour détecter les URLs
         self.url_patterns = {
             "youtube": re.compile(
                 r'(?:https?://)?(?:www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]+)',
@@ -59,362 +40,338 @@ class SocialThreadOpener(commands.Cog):
                 re.IGNORECASE
             ),
             "facebook": re.compile(
-                r'(?:https?://)?(?:www\.)?(facebook\.com/(?:watch/\?v=\d+|[^/\s]+/videos/\d+|[^/\s]+/posts/\d+|share/v\?v=\d+)|fb\.watch/[a-zA-Z0-9_-]+)',
+                r'(?:https?://)?(?:www\.)?(facebook\.com/(?:watch|reel|share|.*?/videos?|.*?/posts?)/[a-zA-Z0-9_-]+|fb\.watch/[a-zA-Z0-9_-]+)',
                 re.IGNORECASE
             )
         }
 
-    @commands.group(name="socialthread", aliases=["st"])
-    @commands.guild_only()
-    @checks.admin_or_permissions(manage_guild=True)
-    async def social_thread(self, ctx):
-        """Configuration du Social Thread Opener"""
-        pass
-
-    @social_thread.command(name="enable")
-    async def enable_social_thread(self, ctx):
-        """Active le Social Thread Opener"""
-        await self.config.guild(ctx.guild).enabled.set(True)
-        await ctx.send("✅ Social Thread Opener activé!")
-
-    @social_thread.command(name="disable")
-    async def disable_social_thread(self, ctx):
-        """Désactive le Social Thread Opener"""
-        await self.config.guild(ctx.guild).enabled.set(False)
-        await ctx.send("❌ Social Thread Opener désactivé!")
-
-    @social_thread.command(name="addchannel")
-    async def add_channel(self, ctx, channel: discord.TextChannel = None):
-        """Ajoute un canal à surveiller"""
-        if channel is None:
-            channel = ctx.channel
-        
-        async with self.config.guild(ctx.guild).channels() as channels:
-            if channel.id not in channels:
-                channels.append(channel.id)
-                await ctx.send(f"✅ Canal {channel.mention} ajouté à la surveillance!")
-            else:
-                await ctx.send(f"⚠️ Canal {channel.mention} déjà surveillé!")
-
-    @social_thread.command(name="removechannel")
-    async def remove_channel(self, ctx, channel: discord.TextChannel = None):
-        """Retire un canal de la surveillance"""
-        if channel is None:
-            channel = ctx.channel
-        
-        async with self.config.guild(ctx.guild).channels() as channels:
-            if channel.id in channels:
-                channels.remove(channel.id)
-                await ctx.send(f"✅ Canal {channel.mention} retiré de la surveillance!")
-            else:
-                await ctx.send(f"⚠️ Canal {channel.mention} n'était pas surveillé!")
-
-    @social_thread.command(name="linkonly")
-    async def toggle_link_only(self, ctx):
-        """Active/désactive le mode 'liens uniquement'"""
-        current = await self.config.guild(ctx.guild).delete_non_links()
-        await self.config.guild(ctx.guild).delete_non_links.set(not current)
-        
-        if not current:
-            await ctx.send("🔒 **Mode 'liens uniquement' ACTIVÉ!** Les messages sans liens seront supprimés.")
-        else:
-            await ctx.send("🔓 **Mode 'liens uniquement' désactivé.** Tous les messages sont autorisés.")
-
-    @social_thread.command(name="settings")
-    async def show_settings(self, ctx):
-        """Affiche la configuration actuelle"""
-        config = await self.config.guild(ctx.guild).all()
-        
-        embed = discord.Embed(title="⚙️ Configuration Social Thread Opener", color=0x2F3136)
-        embed.add_field(name="🔧 État", value="✅ Activé" if config["enabled"] else "❌ Désactivé", inline=True)
-        embed.add_field(name="🔒 Mode liens uniques", value="✅ Activé" if config["delete_non_links"] else "❌ Désactivé", inline=True)
-        embed.add_field(name="📎 Médias autorisés", value="✅ Oui" if config["allow_media"] else "❌ Non", inline=True)
-        
-        # Affichage des plateformes supportées
-        platforms_status = []
-        for platform, enabled in config["platforms"].items():
-            status = "✅" if enabled else "❌"
-            platforms_status.append(f"{status} {platform.title()}")
-        embed.add_field(name="📱 Plateformes", value="\n".join(platforms_status), inline=True)
-        
-        if config["channels"]:
-            channels = [f"<#{ch}>" for ch in config["channels"]]
-            embed.add_field(name="📺 Canaux surveillés", value="\n".join(channels), inline=False)
-        else:
-            embed.add_field(name="📺 Canaux surveillés", value="Aucun canal configuré", inline=False)
-        
-        embed.add_field(name="⚠️ Message d'avertissement", value=config["warning_message"], inline=False)
-        
-        await ctx.send(embed=embed)
-
-    @social_thread.command(name="test")
-    async def test_config(self, ctx):
-        """Teste la configuration actuelle"""
-        config = await self.config.guild(ctx.guild).all()
-        
-        embed = discord.Embed(title="🧪 Test de Configuration", color=0x00ff00)
-        
-        # Tests
-        tests = []
-        if config["enabled"]:
-            tests.append("✅ Cog activé")
-        else:
-            tests.append("❌ Cog désactivé")
-        
-        if config["channels"]:
-            if ctx.channel.id in config["channels"]:
-                tests.append("✅ Canal actuel surveillé")
-            else:
-                tests.append("⚠️ Canal actuel non surveillé")
-        else:
-            tests.append("⚠️ Aucun canal configuré")
-        
-        if config["delete_non_links"]:
-            tests.append("✅ Mode liens uniquement activé")
-        else:
-            tests.append("ℹ️ Mode liens uniquement désactivé")
-        
-        # Permissions
-        perms = ctx.channel.permissions_for(ctx.guild.me)
-        if perms.manage_messages:
-            tests.append("✅ Permission de gérer les messages")
-        else:
-            tests.append("❌ Pas de permission de gérer les messages")
-            
-        if perms.create_public_threads:
-            tests.append("✅ Permission de créer des threads")
-        else:
-            tests.append("❌ Pas de permission de créer des threads")
-        
-        embed.description = "\n".join(tests)
-        await ctx.send(embed=embed)
-
-    def _has_social_media_links(self, message: discord.Message, guild_config: dict) -> bool:
-        """Vérifie si le message contient des liens de médias sociaux configurés"""
-        platforms = guild_config.get("platforms", {})
-        
-        for platform, enabled in platforms.items():
-            if enabled and platform in self.url_patterns:
-                if self.url_patterns[platform].search(message.content):
-                    return True
-        return False
-
-    def _detect_social_links(self, message: discord.Message, guild_config: dict):
-        """Détecte les liens de médias sociaux dans un message"""
-        detected_platforms = []
-        detected_urls = []
-        platforms = guild_config.get("platforms", {})
-        
-        for platform, enabled in platforms.items():
-            if enabled and platform in self.url_patterns:
-                matches = self.url_patterns[platform].findall(message.content)
-                if matches:
-                    detected_platforms.append(platform)
-                    detected_urls.extend(matches)
-        
-        return detected_platforms, detected_urls
-
-    async def _is_user_exempt(self, message: discord.Message, guild_config: dict) -> bool:
-        """Vérifie si un utilisateur est exempté des restrictions"""
-        # Admins et modérateurs sont toujours exemptés
-        if message.author.guild_permissions.manage_messages:
-            return True
-        
-        # Vérification des rôles whitelist
-        whitelist_roles = guild_config.get("whitelist_roles", [])
-        if whitelist_roles:
-            user_role_ids = [role.id for role in message.author.roles]
-            if any(role_id in user_role_ids for role_id in whitelist_roles):
-                return True
-        
-        return False
-
-    async def _delete_and_warn(self, message: discord.Message, guild_config: dict):
-        """Supprime un message et envoie un avertissement"""
+    async def get_video_title(self, url: str, platform: str) -> Optional[str]:
+        """Récupère le titre d'une vidéo"""
         try:
-            warning_msg = guild_config.get("warning_message", "❌ Ce canal est réservé aux liens uniquement!")
+            timeout = aiohttp.ClientTimeout(total=10)
             
-            # Suppression du message
-            await message.delete()
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
             
-            # Avertissement éphémère (via DM car pas de slash command)
-            try:
-                embed = discord.Embed(
-                    title="⚠️ Message supprimé",
-                    description=warning_msg,
-                    color=0xff4444
-                )
-                embed.add_field(
-                    name="📝 Votre message",
-                    value=f"```{message.content[:500]}{'...' if len(message.content) > 500 else ''}```",
-                    inline=False
-                )
-                embed.add_field(
-                    name="📍 Dans le canal",
-                    value=message.channel.mention,
-                    inline=True
-                )
-                
-                await message.author.send(embed=embed)
-            except discord.Forbidden:
-                # Si on ne peut pas DM, on envoie un message temporaire
-                temp_msg = await message.channel.send(
-                    f"{message.author.mention}, {warning_msg}",
-                    delete_after=10
-                )
-        
+            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        return None
+                    
+                    content = await response.text()
+                    
+                    # Chercher différents patterns de titre
+                    title_patterns = [
+                        r'<title[^>]*>([^<]+)</title>',
+                        r'"title":"([^"]*)"',
+                        r'<meta[^>]*property="og:title"[^>]*content="([^"]*)"',
+                        r'<meta[^>]*name="title"[^>]*content="([^"]*)"'
+                    ]
+                    
+                    for pattern in title_patterns:
+                        match = re.search(pattern, content, re.IGNORECASE | re.DOTALL)
+                        if match:
+                            title = match.group(1).strip()
+                            # Nettoyer le titre
+                            title = re.sub(r'\s+', ' ', title)
+                            title = title[:100] + "..." if len(title) > 100 else title
+                            return title
+                    
+                    return None
         except Exception as e:
-            print(f"Erreur suppression/avertissement: {e}")
+            print(f"Erreur lors de la récupération du titre: {e}")
+            return None
 
     @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        """Gère la modération ET la création de threads"""
-        print(f"🔍 MESSAGE REÇU: '{message.content[:50]}...' de {message.author.display_name}")
-        
+    async def on_message(self, message):
+        """Écoute les messages pour détecter les liens sociaux"""
         if message.author.bot:
-            print("❌ Message de bot - ignoré")
             return
             
         if not message.guild:
-            print("❌ Pas de serveur - ignoré")
             return
         
-        guild_config = await self.config.guild(message.guild).all()
-        print(f"⚙️ Config loaded: enabled={guild_config['enabled']}")
-        
-        if not guild_config["enabled"]:
-            print("❌ Cog désactivé - ignoré")
+        # Vérifier si le canal est activé
+        enabled_channels = await self.config.guild(message.guild).enabled_channels()
+        if message.channel.id not in enabled_channels:
             return
         
-        print(f"📋 Canaux surveillés: {guild_config['channels']}")
-        print(f"💬 Canal actuel: {message.channel.id}")
+        # Détecter les liens
+        detected_platforms = []
+        for platform, pattern in self.url_patterns.items():
+            if pattern.search(message.content):
+                platform_config = await self.config.guild(message.guild).get_raw(platform)
+                if platform_config["enabled"]:
+                    detected_platforms.append((platform, platform_config["emoji"]))
         
-        if guild_config["channels"] and message.channel.id not in guild_config["channels"]:
-            print("❌ Canal non surveillé - ignoré")
+        if not detected_platforms:
             return
         
-        if isinstance(message.channel, discord.Thread):
-            print("❌ Dans un thread - ignoré")
-            return
-        
-        print(f"🤖 Permissions bot: manage_messages={message.channel.permissions_for(message.guild.me).manage_messages}")
-        print(f"🧵 Permissions bot: create_threads={message.channel.permissions_for(message.guild.me).create_public_threads}")
-        
-        if not message.channel.permissions_for(message.guild.me).manage_messages:
-            print("❌ Pas de permission manage_messages")
-            return
-            
-        if not message.channel.permissions_for(message.guild.me).create_public_threads:
-            print("❌ Pas de permission create_threads")
-            return
-        
-        print(f"🔍 Analyse du message: '{message.content[:100]}...'")
-        
-        # MODÉRATION EN PREMIER
-        delete_non_links = guild_config.get("delete_non_links", False)
-        print(f"🔒 Mode liens uniquement ACTIF: {delete_non_links}")
-        
-        if delete_non_links:
-            print("🔒 DÉBUT DE LA MODÉRATION")
-            
-            is_exempt = await self._is_user_exempt(message, guild_config)
-            print(f"👑 Utilisateur exempté: {is_exempt}")
-            
-            if not is_exempt:
-                has_social_links = self._has_social_media_links(message, guild_config)
-                print(f"🔗 Message a des liens sociaux: {has_social_links}")
-                
-                if not has_social_links:
-                    has_media = bool(message.attachments or message.embeds)
-                    allow_media = guild_config.get("allow_media", True)
-                    print(f"📎 A des médias: {has_media}, médias autorisés: {allow_media}")
-                    
-                    if not (has_media and allow_media):
-                        print("🗑️ MESSAGE VA ÊTRE SUPPRIMÉ!")
-                        await self._delete_and_warn(message, guild_config)
-                        return
-                    else:
-                        print("✅ Message avec médias autorisé")
-                else:
-                    print("✅ Message avec liens sociaux autorisé")
-            else:
-                print("✅ Utilisateur exempté - message autorisé")
-        else:
-            print("🔓 Mode liens uniquement INACTIF")
-        
-        # CRÉATION DE THREADS
-        print("🧵 VÉRIFICATION POUR THREADS...")
-        detected_platforms, detected_urls = self._detect_social_links(message, guild_config)
-        
-        if detected_platforms:
-            print(f"📱 Plateformes détectées pour thread: {detected_platforms}")
-            
-            if guild_config["delay"] > 0:
-                await asyncio.sleep(guild_config["delay"])
-            
-            await self._create_thread_simplified(message, detected_platforms, detected_urls, guild_config)
-        else:
-            print("❌ Aucune plateforme détectée pour thread")
-
-    async def _create_thread_simplified(self, message: discord.Message, platforms: list, urls: list, guild_config: dict):
-        """Version simplifiée pour créer un thread"""
+        # Créer le thread
         try:
-            author_name = message.author.display_name
+            # Récupérer le titre si possible
+            title_parts = []
+            for platform, emoji in detected_platforms:
+                pattern = self.url_patterns[platform]
+                match = pattern.search(message.content)
+                if match:
+                    full_url = match.group(0)
+                    if not full_url.startswith('http'):
+                        full_url = 'https://' + full_url
+                    
+                    video_title = await self.get_video_title(full_url, platform)
+                    if video_title:
+                        title_parts.append(f"{emoji} {video_title}")
+                    else:
+                        title_parts.append(f"{emoji} {platform.title()}")
             
-            if len(platforms) == 1:
-                platform = platforms[0]
-                thread_name = f"{platform.title()} - {author_name}"
+            # Nom du thread
+            if title_parts:
+                thread_name = " | ".join(title_parts)
             else:
-                thread_name = f"Thread de {author_name}"
+                platforms_str = " & ".join([f"{emoji} {platform.title()}" for platform, emoji in detected_platforms])
+                thread_name = f"💬 Discussion {platforms_str}"
             
-            # Nettoyage du nom
-            thread_name = re.sub(r'[<>:"/\\|?*]', '', thread_name)
-            thread_name = re.sub(r'\s+', ' ', thread_name).strip()
-            
+            # Limiter la longueur du nom
             if len(thread_name) > 100:
                 thread_name = thread_name[:97] + "..."
             
-            if len(thread_name) < 1:
-                thread_name = f"Thread de {author_name}"
-            
-            # Création du thread
+            # Créer le thread
             thread = await message.create_thread(
                 name=thread_name,
-                auto_archive_duration=1440
+                auto_archive_duration=1440  # 24 heures
             )
             
-            # Message d'introduction
-            if len(platforms) == 1:
-                platform = platforms[0]
-                if platform == "youtube":
-                    intro = f"Thread créé pour discuter de cette vidéo YouTube partagée par {message.author.mention}!"
-                elif platform == "instagram":
-                    intro = f"Thread créé pour discuter de ce post Instagram partagé par {message.author.mention}!"
-                elif platform == "tiktok":
-                    intro = f"Thread créé pour discuter de cette vidéo TikTok partagée par {message.author.mention}!"
-                elif platform == "facebook":
-                    intro = f"Thread créé pour discuter de ce contenu Facebook partagé par {message.author.mention}!"
-                else:
-                    intro = f"Thread créé pour discuter du contenu {platform.title()} partagé par {message.author.mention}!"
+            # Message de bienvenue
+            welcome_messages = {
+                "youtube": "Discutons de cette vidéo YouTube ! 🎬",
+                "tiktok": "Que pensez-vous de ce TikTok ? 💃",
+                "instagram": "Réagissons à ce post Instagram ! ✨",
+                "facebook": "Parlons de ce contenu Facebook ! 💭"
+            }
+            
+            if len(detected_platforms) == 1:
+                platform, emoji = detected_platforms[0]
+                welcome_msg = welcome_messages.get(platform, "Discutons de ce contenu !")
             else:
-                platform_list = ", ".join([p.title() for p in platforms])
-                intro = f"Thread créé pour discuter du contenu {platform_list} partagé par {message.author.mention}!"
+                welcome_msg = "Plusieurs contenus à discuter ! 🎉"
             
-            await thread.send(intro)
-            print(f"🎉 Thread '{thread_name}' créé!")
+            await thread.send(welcome_msg)
             
+        except discord.Forbidden:
+            pass  # Pas de permissions
+        except discord.HTTPException:
+            pass  # Erreur Discord
         except Exception as e:
-            print(f"💥 Erreur thread: {e}")
+            print(f"Erreur lors de la création du thread: {e}")
 
+    @commands.group(name="socialthread", aliases=["st"])
+    @commands.admin_or_permissions(manage_guild=True)
+    async def socialthread(self, ctx):
+        """Commandes pour configurer l'ouverture automatique de threads"""
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
 
-class DismissView(discord.ui.View):
+    @socialthread.command(name="add")
+    async def add_channel(self, ctx, channel: discord.TextChannel = None):
+        """Ajoute un canal à la liste des canaux surveillés"""
+        if channel is None:
+            channel = ctx.channel
+        
+        enabled_channels = await self.config.guild(ctx.guild).enabled_channels()
+        
+        if channel.id in enabled_channels:
+            await ctx.send(f"❌ Le canal {channel.mention} est déjà surveillé !")
+            return
+        
+        enabled_channels.append(channel.id)
+        await self.config.guild(ctx.guild).enabled_channels.set(enabled_channels)
+        
+        await ctx.send(f"✅ Canal {channel.mention} ajouté à la surveillance des liens sociaux !")
+
+    @socialthread.command(name="remove")
+    async def remove_channel(self, ctx, channel: discord.TextChannel = None):
+        """Retire un canal de la liste des canaux surveillés"""
+        if channel is None:
+            channel = ctx.channel
+        
+        enabled_channels = await self.config.guild(ctx.guild).enabled_channels()
+        
+        if channel.id not in enabled_channels:
+            await ctx.send(f"❌ Le canal {channel.mention} n'est pas surveillé !")
+            return
+        
+        enabled_channels.remove(channel.id)
+        await self.config.guild(ctx.guild).enabled_channels.set(enabled_channels)
+        
+        await ctx.send(f"✅ Canal {channel.mention} retiré de la surveillance !")
+
+    @socialthread.command(name="list")
+    async def list_channels(self, ctx):
+        """Affiche la liste des canaux surveillés"""
+        enabled_channels = await self.config.guild(ctx.guild).enabled_channels()
+        
+        if not enabled_channels:
+            await ctx.send("❌ Aucun canal n'est actuellement surveillé.")
+            return
+        
+        channels_mention = []
+        for channel_id in enabled_channels:
+            channel = ctx.guild.get_channel(channel_id)
+            if channel:
+                channels_mention.append(channel.mention)
+            else:
+                channels_mention.append(f"Canal supprimé (ID: {channel_id})")
+        
+        embed = discord.Embed(
+            title="📺 Canaux Surveillés",
+            description="\n".join(f"• {channel}" for channel in channels_mention),
+            color=discord.Color.blue()
+        )
+        
+        await ctx.send(embed=embed)
+
+    @socialthread.command(name="toggle")
+    async def toggle_platform(self, ctx, platform: str):
+        """Active/désactive une plateforme (youtube, tiktok, instagram, facebook)"""
+        platform = platform.lower()
+        valid_platforms = ["youtube", "tiktok", "instagram", "facebook"]
+        
+        if platform not in valid_platforms:
+            await ctx.send(f"❌ Plateforme invalide ! Plateformes disponibles: {', '.join(valid_platforms)}")
+            return
+        
+        current_state = await self.config.guild(ctx.guild).get_raw(platform, "enabled")
+        new_state = not current_state
+        
+        await self.config.guild(ctx.guild).set_raw(platform, "enabled", value=new_state)
+        
+        status = "✅ activée" if new_state else "❌ désactivée"
+        await ctx.send(f"Plateforme **{platform.title()}** {status} !")
+
+    @socialthread.command(name="emoji")
+    async def set_emoji(self, ctx, platform: str, emoji: str):
+        """Change l'emoji d'une plateforme"""
+        platform = platform.lower()
+        valid_platforms = ["youtube", "tiktok", "instagram", "facebook"]
+        
+        if platform not in valid_platforms:
+            await ctx.send(f"❌ Plateforme invalide ! Plateformes disponibles: {', '.join(valid_platforms)}")
+            return
+        
+        await self.config.guild(ctx.guild).set_raw(platform, "emoji", value=emoji)
+        await ctx.send(f"✅ Emoji pour **{platform.title()}** changé en {emoji} !")
+
+    @socialthread.command(name="settings")
+    async def show_settings(self, ctx):
+        """Affiche les paramètres actuels"""
+        guild_config = await self.config.guild(ctx.guild).all()
+        
+        embed = discord.Embed(
+            title="⚙️ Paramètres SocialThread",
+            color=discord.Color.green()
+        )
+        
+        # Canaux surveillés
+        if guild_config["enabled_channels"]:
+            channels_list = []
+            for channel_id in guild_config["enabled_channels"]:
+                channel = ctx.guild.get_channel(channel_id)
+                channels_list.append(channel.mention if channel else f"Canal supprimé ({channel_id})")
+            embed.add_field(
+                name="📺 Canaux Surveillés",
+                value="\n".join(channels_list),
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="📺 Canaux Surveillés",
+                value="Aucun canal configuré",
+                inline=False
+            )
+        
+        # Plateformes
+        platforms_info = []
+        for platform in ["youtube", "tiktok", "instagram", "facebook"]:
+            config = guild_config[platform]
+            status = "✅" if config["enabled"] else "❌"
+            platforms_info.append(f"{config['emoji']} **{platform.title()}**: {status}")
+        
+        embed.add_field(
+            name="🌐 Plateformes",
+            value="\n".join(platforms_info),
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
+
+    @socialthread.command(name="test")
+    async def test_detection(self, ctx, *, url: str):
+        """Test la détection d'URL"""
+        detected = []
+        for platform, pattern in self.url_patterns.items():
+            if pattern.search(url):
+                detected.append(platform)
+        
+        if detected:
+            await ctx.send(f"✅ URL détectée comme: **{', '.join(detected)}**")
+        else:
+            await ctx.send("❌ Aucune plateforme détectée dans cette URL")
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload):
+        """Gère les réactions sur les messages de thread"""
+        if payload.emoji.name == "🗑️":
+            try:
+                channel = self.bot.get_channel(payload.channel_id)
+                if isinstance(channel, discord.Thread):
+                    message = await channel.fetch_message(payload.message_id)
+                    user = self.bot.get_user(payload.user_id)
+                    
+                    if user and not user.bot:
+                        # Créer un bouton de suppression
+                        view = discord.ui.View()
+                        delete_button = discord.ui.Button(
+                            label="Supprimer le thread",
+                            style=discord.ButtonStyle.danger,
+                            emoji="🗑️"
+                        )
+                        
+                        async def delete_callback(interaction):
+                            if interaction.user.guild_permissions.manage_threads or interaction.user == channel.owner:
+                                await channel.delete()
+                            else:
+                                await interaction.response.send_message("❌ Vous n'avez pas la permission de supprimer ce thread.", ephemeral=True)
+                        
+                        delete_button.callback = delete_callback
+                        view.add_item(delete_button)
+                        
+                        await message.reply("Voulez-vous vraiment supprimer ce thread ?", view=view)
+            except:
+                pass
+
+# Interface de suppression de thread
+class ThreadDeleteView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=300)
-    
-    @discord.ui.button(label="✖️ Fermer", style=discord.ButtonStyle.secondary)
-    async def dismiss_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        super().__init__(timeout=60)
+
+    @discord.ui.button(label='Supprimer le thread', style=discord.ButtonStyle.danger, emoji='🗑️')
+    async def delete_thread(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not isinstance(interaction.channel, discord.Thread):
+            await interaction.response.send_message("Cette commande ne fonctionne que dans un thread!", ephemeral=True)
+            return
+            
+        # Vérifier les permissions
+        if not (interaction.user.guild_permissions.manage_threads or 
+                interaction.user == interaction.channel.owner or
+                interaction.user.guild_permissions.administrator):
+            await interaction.response.send_message("❌ Vous n'avez pas la permission de supprimer ce thread!", ephemeral=True)
+            return
+        
+        # Supprimer le thread
         try:
-            await interaction.message.delete()
+            await interaction.channel.delete()
         except:
             await interaction.response.send_message("Message supprimé!", ephemeral=True)
 
