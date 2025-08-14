@@ -1,4 +1,4 @@
-Tu as raison, le problème vient de la logique de détection. Je vais corriger ça. Le souci est que la fonction vérifie d'abord les liens avant de vérifier s'il faut supprimer. Voici la version corrigée :
+Ah ! Il y a une erreur de syntaxe dans le fichier - j'ai laissé du texte français au début. Voici le code corrigé :
 import re
 import asyncio
 import aiohttp
@@ -62,7 +62,6 @@ class SocialThreadOpener(commands.Cog):
             )
         }
 
-    # [Toutes tes commandes restent identiques jusqu'à on_message]
     @commands.group(name="socialthread", aliases=["st"])
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
@@ -164,7 +163,6 @@ class SocialThreadOpener(commands.Cog):
         status = "✅ AUTORISÉS" if not current else "❌ NON AUTORISÉS"
         await ctx.send(f"📎 **Fichiers et images {status}** dans le mode 'liens uniquement'!")
 
-    # [Garde toutes tes autres commandes: channels, platforms, format, titles, delay, etc.]
     @social_thread.command(name="channels")
     async def list_channels(self, ctx):
         """Liste les canaux surveillés"""
@@ -275,7 +273,7 @@ class SocialThreadOpener(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        """🔥 FONCTION PRINCIPALE - Gère la modération ET la création de threads"""
+        """Gère la modération ET la création de threads"""
         # Vérifications de base
         if message.author.bot or not message.guild:
             return
@@ -303,7 +301,7 @@ class SocialThreadOpener(commands.Cog):
         
         print(f"🔍 Message analysé de {message.author.display_name}: '{message.content[:50]}...'")
         
-        # 🆕 ÉTAPE 1: VÉRIFICATION MODÉRATION EN PREMIER
+        # ÉTAPE 1: VÉRIFICATION MODÉRATION EN PREMIER
         delete_non_links = guild_config.get("delete_non_links", False)
         print(f"🔒 Mode liens uniquement: {delete_non_links}")
         
@@ -323,11 +321,11 @@ class SocialThreadOpener(commands.Cog):
                     print(f"📎 A des médias: {has_media}, autorisés: {allow_media}")
                     
                     if not (has_media and allow_media):
-                        # 🗑️ SUPPRIME LE MESSAGE
+                        # SUPPRIME LE MESSAGE
                         await self._delete_and_warn(message, guild_config)
                         return  # ARRÊTE ici, ne crée pas de thread
         
-        # 🆕 ÉTAPE 2: SI PAS SUPPRIMÉ, VÉRIFIE POUR THREADS
+        # ÉTAPE 2: SI PAS SUPPRIMÉ, VÉRIFIE POUR THREADS
         detected_platforms, detected_urls = self._detect_social_links(message, guild_config)
         
         if detected_platforms:
@@ -417,7 +415,6 @@ class SocialThreadOpener(commands.Cog):
         except Exception as e:
             print(f"💥 Erreur suppression: {e}")
 
-    # [Garde toutes tes méthodes existantes: _get_youtube_title, _clean_youtube_title, _create_thread_simplified]
     async def _get_youtube_title(self, url: str) -> Optional[str]:
         """Récupère le titre YouTube avec plusieurs méthodes de fallback"""
         try:
