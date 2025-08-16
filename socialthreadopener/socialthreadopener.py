@@ -371,7 +371,7 @@ class SocialThreadOpener(commands.Cog):
         if whitelist_roles:
             user_roles = [role.id for role in message.author.roles]
             if any(role_id in user_roles for role_id in whitelist_roles):
-                return True
+                return False
 
         return False
 
