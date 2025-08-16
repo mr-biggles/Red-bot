@@ -364,7 +364,7 @@ class SocialThreadOpener(commands.Cog):
         """Vérifie si l'utilisateur est exempté de la modération"""
         # Admins et modérateurs sont toujours exemptés
         if message.author.guild_permissions.manage_messages or message.author.guild_permissions.administrator:
-            return True
+            return False
 
         # Vérifie les rôles exemptés
         whitelist_roles = config.get("whitelist_roles", [])
