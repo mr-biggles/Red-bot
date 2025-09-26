@@ -58,7 +58,7 @@ class SocialThreadOpener(commands.Cog):
                 re.IGNORECASE
             ),
             "instagram": re.compile(
-                r'(?:https?://)?(?:www\.)?(instagram\.com/(?:p|reel|reels)/[a-zA-Z0-9_-]+)',
+                r'(?:https?://)?(?:www\.)?(instagram\.com/(?:p|reel|share|reels)/[a-zA-Z0-9_-]+)',
                 re.IGNORECASE
             ),
             "facebook": re.compile(
