@@ -10,10 +10,10 @@ from redbot.core.utils.chat_formatting import humanize_list
 
 class SocialThreadOpener(commands.Cog):
     """
-    Crée automatiquement des threads pour les liens YouTube, TikTok, Instagram, Facebook, Imgur et les GIFs
+    Crée automatiquement des threads pour les liens YouTube, TikTok, Instagram, Facebook, Imgur, Twitch et les GIFs
     """
 
-    __version__ = "1.2.0"
+    __version__ = "1.2.1"
 
     def __init__(self, bot: Red):
         self.bot = bot
@@ -32,7 +32,8 @@ class SocialThreadOpener(commands.Cog):
                 "instagram": True,
                 "facebook": True,
                 "imgur": True,
-                "gif": True
+                "gif": True,
+                "twitch": True
             },
             "fetch_titles": True,
             "fallback_format": "Discussion: {platform}",
@@ -40,7 +41,7 @@ class SocialThreadOpener(commands.Cog):
             # Nouvelles options pour la modération
             "link_only_mode": False,
             "delete_non_links": False,
-            "warning_message": "❌ Ce canal est réservé aux liens YouTube, TikTok, Instagram, Facebook, Imgur et aux GIF uniquement!",
+            "warning_message": "❌ Ce canal est réservé aux liens YouTube, TikTok, Instagram, Facebook, Imgur, Twitch et aux GIF uniquement!",
             "whitelist_roles": [],
             "allow_media": True,
         }
@@ -50,7 +51,7 @@ class SocialThreadOpener(commands.Cog):
         # Expressions régulières améliorées
         self.url_patterns = {
             "youtube": re.compile(
-                r'(?:https?://)?(?:www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]+)',
+                r'(?:https?://)?(?:www\.)?(youtube\.com/(?:watch\?v=|shorts/|live/|embed/|v/)|youtu\.be/)([a-zA-Z0-9_-]+)',
                 re.IGNORECASE
             ),
             "tiktok": re.compile(
@@ -68,11 +69,16 @@ class SocialThreadOpener(commands.Cog):
             "imgur": re.compile(
                 r'(?:https?://)?(?:www\.)?(i\.)?imgur\.com/(?:a/|gallery/|t/)?[a-zA-Z0-9]+',
                 re.IGNORECASE
+            ),
+            "twitch": re.compile(
+                r'(?:https?://)?(?:www\.)?(twitch\.tv/(?:videos/\d+|[a-zA-Z0-9_]+(?:/clip/[a-zA-Z0-9_-]+)?)|clips\.twitch\.tv/[a-zA-Z0-9_-]+)',
+                re.IGNORECASE
             )
         }
 
-        # Extensions de fichiers GIF
+        # Extensions de fichiers vidéo et GIF
         self.gif_extensions = {'.gif', '.gifv'}
+        self.video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.3gp'}
 
     @commands.group(name="socialthread", aliases=["st"])
     @commands.guild_only()
@@ -129,7 +135,7 @@ class SocialThreadOpener(commands.Cog):
 
         if not current:
             await ctx.send(f"🔒 **Mode 'liens uniquement' {status}!**\n"
-                          f"▫️ Les messages sans liens YouTube/TikTok/Instagram/Facebook/Imgur/GIF seront supprimés dans les canaux surveillés\n"
+                          f"▫️ Les messages sans liens YouTube/TikTok/Instagram/Facebook/Imgur/Twitch/GIF seront supprimés dans les canaux surveillés\n"
                           f"▫️ Un message d'avertissement sera envoyé à l'utilisateur\n"
                           f"▫️ Les admins et rôles exemptés ne sont pas affectés")
         else:
@@ -382,10 +388,13 @@ class SocialThreadOpener(commands.Cog):
             if config["platforms"][platform] and pattern.search(message.content):
                 return True
 
-        # Vérifie les GIFs dans les pièces jointes
+        # Vérifie les GIFs et vidéos dans les pièces jointes
         if config["platforms"]["gif"]:
             for attachment in message.attachments:
                 if any(attachment.filename.lower().endswith(ext) for ext in self.gif_extensions):
+                    return True
+                # Ajoute les fichiers vidéo
+                if any(attachment.filename.lower().endswith(ext) for ext in self.video_extensions):
                     return True
 
         return False
@@ -400,16 +409,23 @@ class SocialThreadOpener(commands.Cog):
             if config["platforms"][platform]:
                 if platform == "youtube":
                     youtube_matches = re.findall(
-                        r'(?:https?://)?(?:www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]+)',
+                        r'(?:https?://)?(?:www\.)?(youtube\.com/(?:watch\?v=|shorts/|live/|embed/|v/)|youtu\.be/)([a-zA-Z0-9_-]+)',
                         message.content, re.IGNORECASE
                     )
                     if youtube_matches:
                         detected_platforms.append(platform)
                         url_base, video_id = youtube_matches[0]
-                        if "youtu.be/" in url_base or "youtube.com/shorts/" in url_base:
+                        if "youtu.be/" in url_base or "youtube.com/shorts/" in url_base or "youtube.com/live/" in url_base:
                             detected_urls[platform] = f"https://www.youtube.com/watch?v={video_id}"
                         else:
                             detected_urls[platform] = f"https://www.youtube.com/watch?v={video_id}"
+                elif platform == "twitch":
+                    twitch_matches = pattern.findall(message.content)
+                    if twitch_matches:
+                        detected_platforms.append(platform)
+                        full_match = pattern.search(message.content)
+                        if full_match:
+                            detected_urls[platform] = full_match.group(0)
                 else:
                     matches = pattern.findall(message.content)
                     if matches:
@@ -420,12 +436,16 @@ class SocialThreadOpener(commands.Cog):
                             if full_match:
                                 detected_urls[platform] = full_match.group(0)
 
-        # Détection des GIFs dans les pièces jointes
+        # Détection des GIFs et vidéos dans les pièces jointes
         if config["platforms"]["gif"]:
             for attachment in message.attachments:
                 if any(attachment.filename.lower().endswith(ext) for ext in self.gif_extensions):
                     detected_platforms.append("gif")
                     detected_urls["gif"] = attachment.url
+                # Ajoute les fichiers vidéo
+                elif any(attachment.filename.lower().endswith(ext) for ext in self.video_extensions):
+                    detected_platforms.append("video")
+                    detected_urls["video"] = attachment.url
 
         return detected_platforms, detected_urls
 
@@ -438,7 +458,7 @@ class SocialThreadOpener(commands.Cog):
             await message.delete()
 
             # Prépare le message d'avertissement
-            warning_msg = config.get("warning_message", "❌ Ce canal est réservé aux liens YouTube, TikTok, Instagram, Facebook, Imgur et aux GIF uniquement!")
+            warning_msg = config.get("warning_message", "❌ Ce canal est réservé aux liens YouTube, TikTok, Instagram, Facebook, Imgur, Twitch et aux GIF uniquement!")
 
             # Crée un message temporaire avec bouton
             view = DismissView()
@@ -585,6 +605,10 @@ class SocialThreadOpener(commands.Cog):
                         thread_name = f"Image Imgur de {author_name}"
                     elif platform == "gif":
                         thread_name = f"GIF de {author_name}"
+                    elif platform == "twitch":
+                        thread_name = f"Stream/Clip Twitch de {author_name}"
+                    elif platform == "video":
+                        thread_name = f"Vidéo de {author_name}"
                 else:
                     thread_name = f"Contenu de {author_name}"
 
@@ -619,6 +643,10 @@ class SocialThreadOpener(commands.Cog):
                     intro = f"Thread créé pour discuter de cette image Imgur partagée par {message.author.mention}!"
                 elif platform == "gif":
                     intro = f"Thread créé pour discuter de ce GIF partagé par {message.author.mention}!"
+                elif platform == "twitch":
+                    intro = f"Thread créé pour discuter de ce stream/clip Twitch partagé par {message.author.mention}!"
+                elif platform == "video":
+                    intro = f"Thread créé pour discuter de cette vidéo partagée par {message.author.mention}!"
             else:
                 platform_list = ", ".join([p.title() for p in platforms])
                 intro = f"Thread créé pour discuter du contenu {platform_list} partagé par {message.author.mention}!"
