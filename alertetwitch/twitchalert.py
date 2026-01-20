@@ -153,9 +153,10 @@ class TwitchAlert(commands.Cog):
         await ctx.send(f"✅ Chaîne Twitch : **{streamer}**")
 
     @alertetwitch.command()
-    async def salon(self, ctx, channel):
-        await self.config.discord_channel.set(channel.id)
-        await ctx.send(f"✅ Salon défini : {channel.mention}")
+async def salon(self, ctx, channel: commands.TextChannel):
+    """Définit le salon d'annonce"""
+    await self.config.discord_channel.set(channel.id)
+    await ctx.send(f"✅ Salon défini : {channel.mention}")
 
     @alertetwitch.command()
     async def message(self, ctx, *, message: str):
