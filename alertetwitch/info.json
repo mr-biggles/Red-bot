@@ -1,0 +1,8 @@
+{
+    "author": ["TonNom"],
+    "name": "TwitchAlert",
+    "short": "Annonce Twitch Live",
+    "description": "Annonce automatiquement quand un streamer Twitch passe en live",
+    "requirements": ["aiohttp"],
+    "version": "1.0.0"
+}
