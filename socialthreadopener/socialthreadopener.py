@@ -8,12 +8,36 @@ from redbot.core import commands, Config, checks
 from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import humanize_list
 
+default_guild = {
+    "enabled": False,
+    "channels": [],
+    "thread_name_format": "{title}",
+    "delay": 2,
+    "platforms": {
+        "youtube": True,
+        "tiktok": True,
+        "instagram": True,
+        "facebook": True,
+        "imgur": True,
+        "gif": True,
+        "twitch": True
+    },
+    "fetch_titles": True,
+    "fallback_format": "Discussion: {platform}",
+    "max_title_length": 80,
+    "link_only_mode": False,
+    "delete_non_links": False,
+    "warning_message": "❌ Ce canal est réservé aux liens YouTube, TikTok, Instagram, Facebook, Imgur, Twitch et aux GIF uniquement!",
+    "whitelist_roles": [],
+    "allow_media": True,
+}
+
 class SocialThreadOpener(commands.Cog):
     """
     Crée automatiquement des threads pour les liens YouTube, TikTok, Instagram, Facebook, Imgur, Twitch et les GIFs
     """
 
-    __version__ = "1.2.2"  # MODIFIÉ : version mise à jour
+    __version__ = "1.2.3"
 
     def __init__(self, bot: Red):
         self.bot = bot
@@ -26,7 +50,7 @@ class SocialThreadOpener(commands.Cog):
         # Expressions régulières améliorées
         self.url_patterns = {
             "youtube": re.compile(
-                r'(?:https?://)?(?:www\.)?(youtube\.com/(?:watch\?v=|shorts/|live/|embed/|v/|clip/)|youtu\.be/)([a-zA-Z0-9_-]+)',  # MODIFIÉ : ajout de clip/
+                r'(?:https?://)?(?:www\.)?(youtube\.com/(?:watch\?v=|shorts/|live/|embed/|v/|clip/)|youtu\.be/)([a-zA-Z0-9_-]+)',
                 re.IGNORECASE
             ),
             "tiktok": re.compile(
@@ -147,21 +171,18 @@ class SocialThreadOpener(commands.Cog):
 
         embed = discord.Embed(title="📊 Status Social Thread Opener", color=discord.Color.blue())
 
-        # Mode liens uniquement
         embed.add_field(
             name="🔒 Mode liens uniquement",
             value="✅ Activé" if guild_config.get("delete_non_links", False) else "❌ Désactivé",
             inline=True
         )
 
-        # Médias autorisés
         embed.add_field(
             name="📎 Fichiers/Images",
             value="✅ Autorisés" if guild_config.get("allow_media", True) else "❌ Interdits",
             inline=True
         )
 
-        # Plateformes activées
         platforms = []
         for platform, enabled in guild_config["platforms"].items():
             if enabled:
@@ -173,7 +194,6 @@ class SocialThreadOpener(commands.Cog):
                 inline=False
             )
 
-        # Message d'avertissement (seulement si mode actif)
         if guild_config.get("delete_non_links", False):
             warning = guild_config.get("warning_message", "Message par défaut")
             embed.add_field(
@@ -182,7 +202,6 @@ class SocialThreadOpener(commands.Cog):
                 inline=False
             )
 
-        # Rôles exemptés
         whitelist_roles = guild_config.get("whitelist_roles", [])
         if whitelist_roles:
             roles = []
@@ -197,7 +216,6 @@ class SocialThreadOpener(commands.Cog):
                     inline=False
                 )
 
-        # Commandes utiles
         embed.add_field(
             name="🔧 Commandes principales",
             value="`!st linkonly` - Activer mode liens uniquement\n"
@@ -234,7 +252,6 @@ class SocialThreadOpener(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """Gère la modération ET la création de threads"""
-        # Vérifications de base
         if message.author.bot or not message.guild:
             return
 
@@ -243,15 +260,12 @@ class SocialThreadOpener(commands.Cog):
         if not guild_config["enabled"]:
             return
 
-        # Vérifie si c'est un canal surveillé
         if guild_config["channels"] and message.channel.id not in guild_config["channels"]:
             return
 
-        # Ignore les threads
         if isinstance(message.channel, discord.Thread):
             return
 
-        # Vérifie les permissions
         if not message.channel.permissions_for(message.guild.me).manage_messages:
             print("⚠️ Pas de permissions pour supprimer les messages")
             return
@@ -261,20 +275,17 @@ class SocialThreadOpener(commands.Cog):
 
         print(f"🔍 Message analysé de {message.author.display_name}: '{message.content[:50]}...'")
 
-        # Détection des liens sociaux
         platforms, urls = self._detect_social_links(message, guild_config)
 
         if platforms:
             await self._create_thread_simplified(message, platforms, urls, guild_config)
         elif guild_config.get("delete_non_links", False):
-            # Vérifie si l'auteur est admin ou a un rôle exempté
             if message.author.guild_permissions.administrator:
                 return
             whitelist_roles = guild_config.get("whitelist_roles", [])
             author_role_ids = [r.id for r in message.author.roles]
             if any(r in author_role_ids for r in whitelist_roles):
                 return
-            # Vérifie si c'est un média autorisé
             if guild_config.get("allow_media", True) and message.attachments:
                 return
             await self._delete_and_warn(message, guild_config)
@@ -286,7 +297,6 @@ class SocialThreadOpener(commands.Cog):
                 if pattern.search(message.content):
                     return True
 
-        # Vérifie les GIFs et vidéos dans les pièces jointes
         if config["platforms"].get("gif", True):
             for attachment in message.attachments:
                 if any(attachment.filename.lower().endswith(ext) for ext in self.gif_extensions):
@@ -309,15 +319,15 @@ class SocialThreadOpener(commands.Cog):
             if matches:
                 detected_platforms.append(platform)
 
-                if platform == "youtube":  # MODIFIÉ : reconstruction URL YouTube selon le type
+                if platform == "youtube":
                     full_match = pattern.search(message.content)
                     if full_match:
-                        url_base = full_match.group(1)  # ex: "youtube.com/clip/" ou "youtube.com/watch?v="
-                        video_id = full_match.group(2)  # l'identifiant
+                        url_base = full_match.group(1)
+                        video_id = full_match.group(2)
 
                         if "youtu.be/" in url_base:
                             detected_urls[platform] = f"https://www.youtube.com/watch?v={video_id}"
-                        elif "clip/" in url_base:  # MODIFIÉ : cas spécifique pour les clips
+                        elif "clip/" in url_base:
                             detected_urls[platform] = f"https://www.youtube.com/clip/{video_id}"
                         elif "shorts/" in url_base:
                             detected_urls[platform] = f"https://www.youtube.com/shorts/{video_id}"
@@ -329,7 +339,6 @@ class SocialThreadOpener(commands.Cog):
                     if full_match:
                         detected_urls[platform] = full_match.group(0)
 
-        # Détection des GIFs et vidéos dans les pièces jointes
         if config["platforms"].get("gif", True):
             for attachment in message.attachments:
                 if any(attachment.filename.lower().endswith(ext) for ext in self.gif_extensions):
@@ -459,7 +468,6 @@ class SocialThreadOpener(commands.Cog):
 
             print(f"🧵 Création thread pour: {platforms}")
 
-            # Cas spécial pour YouTube (récupération du titre)
             if "youtube" in platforms and config["fetch_titles"]:
                 url = urls.get("youtube")
                 if url:
@@ -478,7 +486,6 @@ class SocialThreadOpener(commands.Cog):
                         except KeyError:
                             thread_name = title
 
-            # Si pas de nom de thread ou nom vide, on utilise un nom par défaut
             if not thread_name or len(thread_name.strip()) == 0:
                 if len(platforms) == 1:
                     platform = platforms[0]
@@ -501,7 +508,6 @@ class SocialThreadOpener(commands.Cog):
                 else:
                     thread_name = f"Contenu de {author_name}"
 
-            # Nettoyage du nom du thread
             thread_name = re.sub(r'[<>:"/\\|?*]', '', thread_name)
             thread_name = re.sub(r'\s+', ' ', thread_name).strip()
 
@@ -511,7 +517,6 @@ class SocialThreadOpener(commands.Cog):
             if len(thread_name) < 1:
                 thread_name = f"Thread de {author_name}"
 
-            # Création du thread
             thread = await message.create_thread(
                 name=thread_name,
                 auto_archive_duration=1440
