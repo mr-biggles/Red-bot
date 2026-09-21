@@ -27,7 +27,7 @@ default_guild = {
     "max_title_length": 80,
     "link_only_mode": False,
     "delete_non_links": False,
-    "warning_message": "❌ Ce canal est réservé aux liens YouTube, TikTok, Instagram, Facebook, Imgur, Twitch et aux GIF uniquement!",
+    "warning_message": "❌ Ce canal est réservé aux liens YouTube, TikTok, Instagram, Facebook, Imgur, Twitch, Biginsta et aux GIF uniquement!",
     "whitelist_roles": [],
     "allow_media": True,
 }
@@ -71,6 +71,10 @@ class SocialThreadOpener(commands.Cog):
             ),
             "twitch": re.compile(
                 r'(?:https?://)?(?:www\.)?(twitch\.tv/(?:videos/\d+|[a-zA-Z0-9_]+(?:/clip/[a-zA-Z0-9_-]+)?)|clips\.twitch\.tv/[a-zA-Z0-9_-]+)',
+                re.IGNORECASE
+            ),
+            "biginsta": re.compile(
+                r'(?:https?://)?(?:www\.)?(?:biginsta\.com|b\.biginsta\.com)(?:/[^\s]*)?',
                 re.IGNORECASE
             )
         }
@@ -121,7 +125,7 @@ class SocialThreadOpener(commands.Cog):
 
         if not current:
             await ctx.send(f"🔒 **Mode 'liens uniquement' {status}!**\n"
-                          f"▫️ Les messages sans liens YouTube/TikTok/Instagram/Facebook/Imgur/Twitch/GIF seront supprimés dans les canaux surveillés\n"
+                          f"▫️ Les messages sans liens YouTube/TikTok/Instagram/Facebook/Imgur/Twitch/Biginsta/GIF seront supprimés dans les canaux surveillés\n"
                           f"▫️ Un message d'avertissement sera envoyé à l'utilisateur\n"
                           f"▫️ Les admins et rôles exemptés ne sont pas affectés")
         else:
@@ -357,7 +361,7 @@ class SocialThreadOpener(commands.Cog):
 
             await message.delete()
 
-            warning_msg = config.get("warning_message", "❌ Ce canal est réservé aux liens YouTube, TikTok, Instagram, Facebook, Imgur, Twitch et aux GIF uniquement!")
+            warning_msg = config.get("warning_message", "❌ Ce canal est réservé aux liens YouTube, TikTok, Instagram, Facebook, Imgur, Twitch, Biginsta et aux GIF uniquement!")
 
             view = DismissView()
 
@@ -503,6 +507,8 @@ class SocialThreadOpener(commands.Cog):
                         thread_name = f"GIF de {author_name}"
                     elif platform == "twitch":
                         thread_name = f"Stream/Clip Twitch de {author_name}"
+                    elif platform == "biginsta":
+                        thread_name = f"Post Biginsta de {author_name}"
                     elif platform == "video":
                         thread_name = f"Vidéo de {author_name}"
                 else:
