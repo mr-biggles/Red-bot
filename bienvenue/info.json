@@ -1,0 +1,9 @@
+{
+  "name": "Bienvenue",
+  "short": "Bannieres de bienvenue avec avatar personnalise",
+  "description": "Accueille les nouveaux membres avec une carte generee avec Pillow et un message configurable.",
+  "author": ["ChatGPT"],
+  "requirements": ["Pillow>=9.0"],
+  "min_bot_version": "3.5.0",
+  "tags": ["welcome", "bienvenue", "images"]
+}
