@@ -3,11 +3,10 @@
 import asyncio
 import io
 import logging
-import re
 from pathlib import Path
 
 import discord
-from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageDraw, ImageOps, UnidentifiedImageError
 from redbot.core import Config, commands
 from redbot.core.data_manager import cog_data_path
 
@@ -37,18 +36,6 @@ class Bienvenue(commands.Cog):
         return self.data_dir / f"fond_{guild_id}.png"
 
     @staticmethod
-    def _font(size: int, bold: bool = False):
-        paths = (
-            ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"]
-            if bold else
-            ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"]
-        )
-        for path in paths:
-            if Path(path).exists():
-                return ImageFont.truetype(path, size)
-        return ImageFont.load_default()
-
-    @staticmethod
     def _placeholders(template: str, member: discord.Member) -> str:
         replacements = {
             "{member}": member.display_name,
@@ -60,43 +47,29 @@ class Bienvenue(commands.Cog):
             template = template.replace(key, value)
         return template
 
-    def _render(self, name: str, guild_name: str, count: int, avatar_bytes: bytes, background: bytes | None) -> io.BytesIO:
+    def _render(self, avatar_bytes: bytes, background: bytes | None) -> io.BytesIO:
+        # Aucun nom, compteur ou titre n'est dessiné sur l'image.
         if background:
             with Image.open(io.BytesIO(background)) as raw:
                 img = ImageOps.fit(raw.convert("RGB"), (W, H), method=Image.Resampling.LANCZOS)
         else:
-            img = Image.new("RGB", (W, H), (21, 27, 51))
-            base = ImageDraw.Draw(img)
-            for y in range(H):
-                base.line((0, y, W, y), fill=(20 + y // 35, 29 + y // 18, 55 + y // 14))
+            default = Path(__file__).with_name("bando_lovers.png")
+            with Image.open(default) as raw:
+                img = ImageOps.fit(raw.convert("RGB"), (W, H), method=Image.Resampling.LANCZOS)
 
         img = img.convert("RGBA")
-        layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(layer)
-        draw.rounded_rectangle((260, 48, 958, 310), radius=30, fill=(9, 13, 27, 195))
-        img = Image.alpha_composite(img, layer)
-        draw = ImageDraw.Draw(img)
-
-        avatar_size = 204
+        # Avatar positionné dans le cercle du fond Bando Lovers (à gauche).
+        # Masque carré + ellipse : cercle rigoureusement rond.
+        diameter = 199
+        center_x, center_y = 226, 174
+        left = center_x - diameter // 2
+        top = center_y - diameter // 2
         with Image.open(io.BytesIO(avatar_bytes)) as raw_avatar:
-            avatar = ImageOps.fit(raw_avatar.convert("RGBA"), (avatar_size, avatar_size), method=Image.Resampling.LANCZOS)
-        mask = Image.new("L", (avatar_size, avatar_size), 0)
-        ImageDraw.Draw(mask).ellipse((0, 0, avatar_size - 1, avatar_size - 1), fill=255)
-        draw.ellipse((35, 70, 251, 286), fill=(255, 255, 255, 255))
-        img.paste(avatar, (41, 76), mask)
+            avatar = ImageOps.fit(raw_avatar.convert("RGBA"), (diameter, diameter), method=Image.Resampling.LANCZOS)
+        mask = Image.new("L", (diameter, diameter), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, diameter - 1, diameter - 1), fill=255)
+        img.paste(avatar, (left, top), mask)
 
-        x = 292
-        draw.text((x, 77), "BIENVENUE SUR LE SERVEUR", font=self._font(25, True), fill=(173, 190, 255))
-        safe_name = re.sub(r"\s+", " ", name).strip()
-        size = 57
-        while size > 22 and draw.textbbox((0, 0), safe_name, font=self._font(size, True))[2] > 628:
-            size -= 2
-        if draw.textbbox((0, 0), safe_name, font=self._font(size, True))[2] > 628:
-            while safe_name and draw.textbbox((0, 0), safe_name + "…", font=self._font(size, True))[2] > 628:
-                safe_name = safe_name[:-1]
-            safe_name += "…"
-        draw.text((x, 122), safe_name, font=self._font(size, True), fill="white", stroke_width=1, stroke_fill=(15, 18, 35))
-        draw.text((x, 228), f"Membre n°{count}", font=self._font(27), fill=(231, 235, 255))
         output = io.BytesIO()
         img.convert("RGB").save(output, format="PNG", optimize=True)
         output.seek(0)
@@ -106,10 +79,7 @@ class Bienvenue(commands.Cog):
         avatar_bytes = await member.display_avatar.replace(size=256, format="png").read()
         path = self._bg_path(member.guild.id)
         background = await asyncio.to_thread(path.read_bytes) if path.exists() else None
-        return await asyncio.to_thread(
-            self._render, member.display_name, member.guild.name,
-            member.guild.member_count or 0, avatar_bytes, background
-        )
+        return await asyncio.to_thread(self._render, avatar_bytes, background)
 
     async def _send_welcome(self, channel: discord.TextChannel, member: discord.Member):
         settings = await self.config.guild(member.guild).all()
@@ -208,9 +178,9 @@ class Bienvenue(commands.Cog):
 
     @bienvenue.command(name="retirerbanniere")
     async def retirer_banniere(self, ctx):
-        """Revient au fond dégradé par défaut."""
+        """Revient à la bannière Bando Lovers fournie avec le cog."""
         self._bg_path(ctx.guild.id).unlink(missing_ok=True)
-        await ctx.send("✅ Fond personnalisé retiré.")
+        await ctx.send("✅ Fond personnalisé retiré : bannière Bando Lovers par défaut restaurée.")
 
     @bienvenue.command(name="test")
     @commands.bot_has_permissions(embed_links=True, attach_files=True)
