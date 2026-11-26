@@ -25,7 +25,8 @@ COL = {
     "bacon": (190, 58, 38),
     "bacon_fat": (238, 160, 140),
     "oignon": (214, 148, 66),
-    "sauce": (222, 82, 38),
+    "sauce": (240, 146, 84),
+    "bbq": (98, 38, 18),
     "cornichon": (104, 140, 42),
     "cornichon_in": (170, 196, 92),
     "cornichon_seed": (232, 236, 190),
@@ -172,6 +173,18 @@ def draw_cornichon(c, ghost):
     c.put(lay)
 
 
+def draw_bbq(c, ghost):
+    """Filet de sauce BBQ en zigzag par-dessus la sauce burger, avec deux coulures."""
+    lay, d = c.layer()
+    color = GHOST_LINE if ghost else COL["bbq"] + (255,)
+    zig = [(x, 193 if i % 2 == 0 else 207) for i, x in enumerate(range(118, 530, 22))]
+    d.line(_pts(zig), fill=color, width=(3 if ghost else 6) * S, joint="curve")
+    if not ghost:
+        for x in (262, 418):
+            d.polygon(_pts([(x - 7, 204), (x + 7, 204), (x + 3, 220), (x, 224), (x - 3, 220)]), fill=color)
+    c.put(lay)
+
+
 def draw_top_bun(c, ghost):
     lay, d = c.layer()
     fill = _fill(ghost, COL["pain"])
@@ -198,7 +211,8 @@ STACK = [
     ("bacon", draw_bacon),
     ("oignon", draw_oignon),
     ("cornichon", draw_cornichon),
-    ("sauce", draw_sauce),
+    ("sauceburger", draw_sauce),
+    ("saucebbq", draw_bbq),
 ]
 
 

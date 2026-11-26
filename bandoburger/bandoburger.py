@@ -18,7 +18,8 @@ INGREDIENTS = [
     ("bacon", "Bacon", "🥓"),
     ("salade", "Salade", "🥬"),
     ("cornichon", "Cornichons", "🥒"),
-    ("sauce", "Sauces (burger + BBQ)", "🥫"),
+    ("sauceburger", "Sauce burger", "🥫"),
+    ("saucebbq", "Sauce BBQ", "🍖"),
 ]
 LABEL = {k: l for k, l, _ in INGREDIENTS}
 EMOJI = {k: e for k, _, e in INGREDIENTS}
@@ -109,6 +110,8 @@ class BandoBurger(commands.Cog):
 
     async def get_items(self, guild: discord.Guild) -> dict:
         items = await self.config.guild(guild).items()
+        if "sauce" in items and "sauceburger" not in items:  # ancienne ligne unique « Sauces »
+            items["sauceburger"] = items["sauce"]
         return {k: upgrade_item(items.get(k)) for k, _, _ in INGREDIENTS}
 
     async def is_mod(self, member: discord.Member) -> bool:
