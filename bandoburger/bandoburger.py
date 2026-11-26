@@ -24,6 +24,8 @@ LABEL = {k: l for k, l, _ in INGREDIENTS}
 EMOJI = {k: e for k, _, e in INGREDIENTS}
 NO_PING = discord.AllowedMentions.none()
 COLOR = 0xF2A516
+TTL = 5  # secondes avant que les messages privés du bot disparaissent
+MENU_TTL = 30  # menu « c'est toi qui le ramènes » sans action
 
 
 class Nope(Exception):
@@ -326,47 +328,62 @@ class PanelView(discord.ui.View):
             return
         if interaction.message and interaction.message.id != await cog.config.guild(guild).message_id():
             return await interaction.response.send_message(
-                "Ce tableau n'est plus actif, utilise le plus récent.", ephemeral=True)
+                "Ce tableau n'est plus actif, utilise le plus récent.", ephemeral=True, delete_after=TTL)
 
         it = (await cog.get_items(guild))[key]
         if it["who"] == user.id:
+            view = MineView(cog, key, interaction)
             return await interaction.response.send_message(
                 f"{EMOJI[key]} **{LABEL[key]}**, c'est toi qui le ramènes. Tu veux faire quoi ?",
-                view=MineView(cog, key), ephemeral=True)
+                view=view, ephemeral=True)
         if it["who"]:
             return await interaction.response.send_message(
                 f"{EMOJI[key]} **{LABEL[key]}** est déjà pris par <@{it['who']}>.",
-                ephemeral=True, allowed_mentions=NO_PING)
+                ephemeral=True, allowed_mentions=NO_PING, delete_after=TTL)
 
         await interaction.response.defer()
         try:
             await cog.mutate(guild, cog.act_take(key, user))
         except Nope as e:
-            return await interaction.followup.send(str(e), ephemeral=True, allowed_mentions=NO_PING)
-        await interaction.followup.send(
+            msg = await interaction.followup.send(str(e), ephemeral=True, allowed_mentions=NO_PING, wait=True)
+            return await msg.delete(delay=TTL)
+        msg = await interaction.followup.send(
             f"{EMOJI[key]} Tu prends **{LABEL[key]}**. Reclique dessus pour changer la quantité ou le lâcher.",
-            ephemeral=True)
+            ephemeral=True, wait=True)
+        await msg.delete(delay=TTL)
 
 
 class MineView(discord.ui.View):
     """Menu privé quand tu cliques sur un ingrédient que tu as déjà pris."""
 
-    def __init__(self, cog: BandoBurger, key: str):
-        super().__init__(timeout=180)
-        self.cog, self.key = cog, key
+    def __init__(self, cog: BandoBurger, key: str, origin: discord.Interaction):
+        super().__init__(timeout=MENU_TTL)
+        self.cog, self.key, self.origin = cog, key, origin
+
+    async def close_menu(self):
+        self.stop()
+        try:
+            await self.origin.delete_original_response()
+        except discord.HTTPException:
+            pass
+
+    async def on_timeout(self):
+        await self.close_menu()
 
     async def _apply(self, interaction: discord.Interaction, fn):
+        self.stop()
         await interaction.response.edit_message(content="⏳", view=None)
         try:
             msg = await self.cog.mutate(interaction.guild, fn)
         except Nope as e:
             msg = str(e)
-        await interaction.edit_original_response(content=msg, allowed_mentions=NO_PING)
+        done = await interaction.edit_original_response(content=msg, allowed_mentions=NO_PING)
+        await done.delete(delay=TTL)
 
     @discord.ui.button(label="Quantité", emoji="✏️", style=discord.ButtonStyle.primary)
     async def quantity(self, interaction: discord.Interaction, button: discord.ui.Button):
         items = await self.cog.get_items(interaction.guild)
-        await interaction.response.send_modal(QtyModal(self.cog, self.key, items[self.key]["qty"]))
+        await interaction.response.send_modal(QtyModal(self.cog, self.key, items[self.key]["qty"], self))
 
     @discord.ui.button(label="Je lâche", emoji="↩️", style=discord.ButtonStyle.danger)
     async def release(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -374,18 +391,21 @@ class MineView(discord.ui.View):
 
 
 class QtyModal(discord.ui.Modal):
-    def __init__(self, cog: BandoBurger, key: str, current: str):
+    def __init__(self, cog: BandoBurger, key: str, current: str, menu: Optional["MineView"] = None):
         super().__init__(title=f"Quantité : {LABEL[key]}"[:45])
-        self.cog, self.key = cog, key
+        self.cog, self.key, self.menu = cog, key, menu
         self.qty = discord.ui.TextInput(label="Combien ?", placeholder="ex. 8 steaks, 2 paquets…",
                                         default=current or None, required=False, max_length=60)
         self.add_item(self.qty)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.send_message("⏳", ephemeral=True)
+        if self.menu:
+            await self.menu.close_menu()
         try:
             msg = await self.cog.mutate(interaction.guild,
                                         self.cog.act_qty(self.key, interaction.user, self.qty.value))
         except Nope as e:
             msg = str(e)
-        await interaction.edit_original_response(content=msg, allowed_mentions=NO_PING)
+        done = await interaction.edit_original_response(content=msg, allowed_mentions=NO_PING)
+        await done.delete(delay=TTL)
