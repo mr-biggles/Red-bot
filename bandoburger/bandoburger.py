@@ -28,7 +28,8 @@ COLOR = 0xF2A516
 TTL = 5  # secondes avant que les messages privés du bot disparaissent
 MENU_TTL = 30  # menu « tu es sur … » sans action
 MAX_TAKERS = 10  # personnes max sur un même ingrédient
-STICKY_DELAY = 4  # secondes de calme avant de redescendre le tableau en bas du salon (tant qu'il n'est pas plein)
+STICKY_EVERY = 6  # le tableau redescend en bas du salon après ce nombre de messages (tant qu'il n'est pas plein)
+STICKY_DELAY = 2  # petite attente pour regrouper une rafale de messages
 
 
 class Nope(Exception):
@@ -104,6 +105,7 @@ class BandoBurger(commands.Cog):
         self.config.register_channel(message_id=None, owner=None, items={}, sticky=True)
         self._locks: Dict[int, asyncio.Lock] = {}
         self._sticky_tasks: Dict[int, asyncio.Task] = {}
+        self._since_panel: Dict[int, int] = {}  # messages postés sous le tableau, par salon
 
     async def cog_unload(self):
         for task in self._sticky_tasks.values():
@@ -231,6 +233,9 @@ class BandoBurger(commands.Cog):
             return  # burger complet : le tableau ne redescend plus
         if await self.bot.cog_disabled_in_guild(self, message.guild):
             return
+        self._since_panel[cid] = self._since_panel.get(cid, 0) + 1
+        if self._since_panel[cid] < STICKY_EVERY:
+            return
         old = self._sticky_tasks.get(cid)
         if old and not old.done():
             old.cancel()  # on attend que ça se calme avant de reposter
@@ -260,6 +265,7 @@ class BandoBurger(commands.Cog):
             except discord.HTTPException:
                 return
             await conf.message_id.set(new.id)
+            self._since_panel[cid] = 0
             try:
                 await channel.get_partial_message(mid).delete()
             except discord.HTTPException:
@@ -361,6 +367,7 @@ class BandoBurger(commands.Cog):
             msg = await ctx.send(embed=self.build_embed(items), file=await self.build_file(items),
                                  view=PanelView(self, items), allowed_mentions=NO_PING)
             await conf.message_id.set(msg.id)
+            self._since_panel[cid] = 0
 
     @bando.command(name="stop")
     @commands.guild_only()
