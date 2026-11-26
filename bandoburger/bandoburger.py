@@ -17,6 +17,7 @@ INGREDIENTS = [
     ("oignon", "Oignon frit", "🧅"),
     ("bacon", "Bacon", "🥓"),
     ("salade", "Salade", "🥬"),
+    ("cornichon", "Cornichons", "🥒"),
     ("sauce", "Sauce", "🥫"),
 ]
 LABEL = {k: l for k, l, _ in INGREDIENTS}
@@ -49,7 +50,7 @@ def find_key(text: str) -> str:
 
 
 def empty_item() -> dict:
-    return {"who": None, "qty": "", "done": False}
+    return {"who": None, "qty": ""}
 
 
 class BandoBurger(commands.Cog):
@@ -108,27 +109,23 @@ class BandoBurger(commands.Cog):
             if it["who"]:
                 who = f"<@{it['who']}>"
                 qty = f" · {it['qty']}" if it["qty"] else ""
-                mark = " ✅" if it["done"] else ""
-                lines.append(f"{emo} **{label}** — {who}{qty}{mark}")
+                lines.append(f"{emo} **{label}** — {who}{qty}")
             else:
                 lines.append(f"{emo} **{label}** — *personne pour l'instant*")
         taken = sum(1 for it in items.values() if it["who"])
-        done = sum(1 for it in items.values() if it["done"])
         total = len(INGREDIENTS)
-        if done == total:
-            title = "🍔 BandoBurger — tout est acheté, on peut lancer la plancha"
-        elif taken == total:
+        if taken == total:
             title = "🍔 BandoBurger — burger complet !"
         else:
             title = "🍔 BandoBurger — qui prend quoi ?"
         embed = discord.Embed(title=title, description="\n".join(lines), color=COLOR)
-        embed.set_footer(text=f"{taken}/{total} pris · {done} acheté{'s' if done > 1 else ''}"
+        embed.set_footer(text=f"{taken}/{total} pris"
                               " · clique sur un ingrédient pour le prendre")
         embed.set_image(url="attachment://burger.png")
         return embed
 
     async def build_file(self, items: dict) -> discord.File:
-        state = {k: ("done" if it["done"] else "taken" if it["who"] else "free") for k, it in items.items()}
+        state = {k: ("taken" if it["who"] else "free") for k, it in items.items()}
         png = await asyncio.get_running_loop().run_in_executor(None, render_burger, state)
         return discord.File(io.BytesIO(png), filename="burger.png")
 
@@ -161,8 +158,6 @@ class BandoBurger(commands.Cog):
             it = items[key]
             if it["who"] and it["who"] != member.id and not force:
                 raise Nope(f"**{LABEL[key]}** est déjà pris par <@{it['who']}>.")
-            if it["who"] != member.id:
-                it["done"] = False
             it["who"] = member.id
             if qty is not None:
                 it["qty"] = qty[:60]
@@ -178,17 +173,6 @@ class BandoBurger(commands.Cog):
                 raise Nope(f"**{LABEL[key]}** est à <@{it['who']}>, pas à toi.")
             items[key] = empty_item()
             return f"{EMOJI[key]} **{LABEL[key]}** est de nouveau libre."
-        return fn
-
-    def act_bought(self, key: str, member: discord.Member, force=False):
-        def fn(items):
-            it = items[key]
-            if not it["who"]:
-                raise Nope(f"Personne n'a pris **{LABEL[key]}**. Prends-le d'abord.")
-            if it["who"] != member.id and not force:
-                raise Nope(f"**{LABEL[key]}** est à <@{it['who']}>, pas à toi.")
-            it["done"] = not it["done"]
-            return f"{EMOJI[key]} **{LABEL[key]}** : {'acheté ✅' if it['done'] else 'plus marqué comme acheté'}"
         return fn
 
     def act_qty(self, key: str, member: discord.Member, qty: str, force=False):
@@ -273,16 +257,6 @@ class BandoBurger(commands.Cog):
             return await ctx.send(str(e), ephemeral=True)
         await self._run(ctx, self.act_release(key, ctx.author, force=await self.is_mod(ctx.author)))
 
-    @bando.command(name="achete")
-    @commands.guild_only()
-    async def bando_achete(self, ctx: commands.Context, ingredient: str):
-        """Coche / décoche « acheté » sur un de tes ingrédients."""
-        try:
-            key = find_key(ingredient)
-        except Nope as e:
-            return await ctx.send(str(e), ephemeral=True)
-        await self._run(ctx, self.act_bought(key, ctx.author, force=await self.is_mod(ctx.author)))
-
     @bando.command(name="quantite")
     @commands.guild_only()
     async def bando_quantite(self, ctx: commands.Context, ingredient: str, *, quantite: str = ""):
@@ -316,7 +290,7 @@ class BandoBurger(commands.Cog):
             return "🧹 Tableau vidé."
         await self._run(ctx, fn)
 
-    for _cmd in (bando_prend, bando_lache, bando_achete, bando_quantite, bando_assigne):
+    for _cmd in (bando_prend, bando_lache, bando_quantite, bando_assigne):
         _cmd.autocomplete("ingredient")(_ing_autocomplete)
     del _cmd
 
@@ -332,9 +306,7 @@ class PanelView(discord.ui.View):
         self.cog = cog
         for i, (key, label, emo) in enumerate(INGREDIENTS):
             it = (items or {}).get(key) or empty_item()
-            if it["done"]:
-                style = discord.ButtonStyle.success
-            elif it["who"]:
+            if it["who"]:
                 style = discord.ButtonStyle.primary
             else:
                 style = discord.ButtonStyle.secondary
@@ -360,7 +332,7 @@ class PanelView(discord.ui.View):
         if it["who"] == user.id:
             return await interaction.response.send_message(
                 f"{EMOJI[key]} **{LABEL[key]}**, c'est toi qui le ramènes. Tu veux faire quoi ?",
-                view=MineView(cog, key, it["done"]), ephemeral=True)
+                view=MineView(cog, key), ephemeral=True)
         if it["who"]:
             return await interaction.response.send_message(
                 f"{EMOJI[key]} **{LABEL[key]}** est déjà pris par <@{it['who']}>.",
@@ -372,18 +344,16 @@ class PanelView(discord.ui.View):
         except Nope as e:
             return await interaction.followup.send(str(e), ephemeral=True, allowed_mentions=NO_PING)
         await interaction.followup.send(
-            f"{EMOJI[key]} Tu prends **{LABEL[key]}**. Reclique dessus pour la quantité ou pour le cocher acheté.",
+            f"{EMOJI[key]} Tu prends **{LABEL[key]}**. Reclique dessus pour changer la quantité ou le lâcher.",
             ephemeral=True)
 
 
 class MineView(discord.ui.View):
     """Menu privé quand tu cliques sur un ingrédient que tu as déjà pris."""
 
-    def __init__(self, cog: BandoBurger, key: str, done: bool):
+    def __init__(self, cog: BandoBurger, key: str):
         super().__init__(timeout=180)
         self.cog, self.key = cog, key
-        self.bought.label = "Plus acheté" if done else "Acheté"
-        self.bought.style = discord.ButtonStyle.secondary if done else discord.ButtonStyle.success
 
     async def _apply(self, interaction: discord.Interaction, fn):
         await interaction.response.edit_message(content="⏳", view=None)
@@ -392,10 +362,6 @@ class MineView(discord.ui.View):
         except Nope as e:
             msg = str(e)
         await interaction.edit_original_response(content=msg, allowed_mentions=NO_PING)
-
-    @discord.ui.button(label="Acheté", emoji="✅", style=discord.ButtonStyle.success)
-    async def bought(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._apply(interaction, self.cog.act_bought(self.key, interaction.user))
 
     @discord.ui.button(label="Quantité", emoji="✏️", style=discord.ButtonStyle.primary)
     async def quantity(self, interaction: discord.Interaction, button: discord.ui.Button):

@@ -1,9 +1,8 @@
 """Dessin du burger avec Pillow.
 
 render_burger(state) -> bytes PNG
-state : dict {cle_ingredient: "free" | "taken" | "done"}
-Les couches libres sont dessinées en fantôme, les prises en couleur,
-les achetées en couleur avec une petite pastille verte.
+state : dict {cle_ingredient: "free" | "taken"}
+Les couches libres sont dessinées en fantôme, les prises en couleur.
 """
 import io
 import math
@@ -27,6 +26,9 @@ COL = {
     "bacon_fat": (238, 160, 140),
     "oignon": (214, 148, 66),
     "sauce": (222, 82, 38),
+    "cornichon": (104, 140, 42),
+    "cornichon_in": (170, 196, 92),
+    "cornichon_seed": (232, 236, 190),
     "salade": (96, 172, 58),
     "salade_dk": (66, 132, 40),
 }
@@ -129,23 +131,37 @@ def draw_oignon(c, ghost):
 
 def draw_sauce(c, ghost):
     lay, d = c.layer()
-    pts = [(110, 212), (530, 212), (530, 226), (496, 228), (482, 246), (466, 228),
-           (360, 228), (344, 250), (328, 228), (230, 228), (212, 244), (196, 228), (110, 228)]
+    pts = [(110, 192), (530, 192), (530, 206), (496, 208), (482, 226), (466, 208),
+           (360, 208), (344, 230), (328, 208), (230, 208), (212, 224), (196, 208), (110, 208)]
     d.polygon(_pts(pts), fill=_fill(ghost, COL["sauce"]),
               outline=GHOST_LINE if ghost else None, width=3 * S if ghost else 0)
+    c.put(lay)
+
+
+def draw_cornichon(c, ghost):
+    lay, d = c.layer()
+    for x in (148, 236, 324, 412, 496):
+        box = _s((x - 34, 210, x + 34, 232))
+        if ghost:
+            d.ellipse(box, fill=GHOST_FILL, outline=GHOST_LINE, width=3 * S)
+            continue
+        d.ellipse(box, fill=COL["cornichon"] + (255,))
+        d.ellipse(_s((x - 27, 213, x + 27, 229)), fill=COL["cornichon_in"] + (255,))
+        for dx in (-14, -5, 5, 14):
+            d.ellipse(_s((x + dx - 2, 219, x + dx + 2, 223)), fill=COL["cornichon_seed"] + (255,))
     c.put(lay)
 
 
 def draw_top_bun(c, ghost):
     lay, d = c.layer()
     fill = _fill(ghost, COL["pain"])
-    d.pieslice(_s((100, 50, 540, 330)), 180, 360, fill=fill,
+    d.pieslice(_s((100, 30, 540, 310)), 180, 360, fill=fill,
                outline=GHOST_LINE if ghost else None, width=3 * S if ghost else 0)
-    d.rounded_rectangle(_s((100, 178, 540, 214)), radius=_s(16), fill=fill, **_line(ghost))
+    d.rounded_rectangle(_s((100, 158, 540, 194)), radius=_s(16), fill=fill, **_line(ghost))
     if not ghost:
-        d.arc(_s((140, 80, 500, 320)), 200, 250, fill=COL["pain_hi"] + (220,), width=12 * S)
-        for x, y, a in ((210, 120, -20), (270, 96, -8), (330, 88, 0), (390, 98, 10),
-                        (450, 124, 22), (240, 150, -12), (310, 132, 0), (380, 140, 8), (460, 162, 16)):
+        d.arc(_s((140, 60, 500, 300)), 200, 250, fill=COL["pain_hi"] + (220,), width=12 * S)
+        for x, y, a in ((210, 100, -20), (270, 76, -8), (330, 68, 0), (390, 78, 10),
+                        (450, 104, 22), (240, 130, -12), (310, 112, 0), (380, 120, 8), (460, 142, 16)):
             seed = Image.new("RGBA", (_s(16), _s(8)), (0, 0, 0, 0))
             ImageDraw.Draw(seed).ellipse((0, 0, _s(16) - 1, _s(8) - 1), fill=COL["sesame"] + (255,))
             seed = seed.rotate(a, expand=True, resample=Image.BICUBIC)
@@ -153,22 +169,16 @@ def draw_top_bun(c, ghost):
     c.put(lay)
 
 
-def draw_check(c, x, y):
-    lay, d = c.layer()
-    d.ellipse(_s((x - 13, y - 13, x + 13, y + 13)), fill=(46, 160, 67, 255), outline=(255, 255, 255, 255), width=2 * S)
-    d.line(_pts([(x - 6, y), (x - 1, y + 5), (x + 7, y - 6)]), fill=(255, 255, 255, 255), width=4 * S, joint="curve")
-    c.put(lay)
-
-
-# ordre de dessin : du bas vers le haut, (clé, fonction, y de la pastille)
+# ordre de dessin : du bas vers le haut
 STACK = [
-    ("pain", draw_bottom_bun, 398),
-    ("salade", draw_salade, 366),
-    ("steak", draw_steak, 327),
-    ("cheddar", draw_cheddar, 289),
-    ("bacon", draw_bacon, 264),
-    ("oignon", draw_oignon, 241),
-    ("sauce", draw_sauce, 220),
+    ("pain", draw_bottom_bun),
+    ("salade", draw_salade),
+    ("steak", draw_steak),
+    ("cheddar", draw_cheddar),
+    ("bacon", draw_bacon),
+    ("oignon", draw_oignon),
+    ("cornichon", draw_cornichon),
+    ("sauce", draw_sauce),
 ]
 
 
@@ -179,15 +189,10 @@ def render_burger(state):
     ImageDraw.Draw(shadow).ellipse(_s((110, 414, 530, 444)), fill=(0, 0, 0, 90))
     c.put(shadow.filter(ImageFilter.GaussianBlur(8 * S)))
 
-    for key, fn, _ in STACK:
+    for key, fn in STACK:
         fn(c, state.get(key, "free") == "free")
     draw_top_bun(c, state.get("pain", "free") == "free")
 
-    checks = [(k, y) for k, _, y in STACK if state.get(k) == "done"]
-    for k, y in checks:
-        draw_check(c, 566, y)
-    if state.get("pain") == "done":
-        draw_check(c, 566, 130)
 
     out = c.img.resize((W, H), Image.LANCZOS)
     buf = io.BytesIO()

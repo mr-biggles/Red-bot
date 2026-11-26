@@ -6,9 +6,9 @@ Cogs [Red-DiscordBot](https://github.com/Cog-Creators/Red-DiscordBot) (3.5+).
 
 Tableau « qui prend quoi » pour le BandoBurger. Tout le monde clique sur un ingrédient pour le prendre, et l'image du burger se monte couche par couche.
 
-- ⬜ bouton gris = libre · 🟦 bleu = pris · 🟩 vert = acheté
+- ⬜ bouton gris = libre · 🟦 bleu = pris
 - Cliquer sur un ingrédient libre → tu le prends
-- Recliquer sur le tien → menu privé : **Acheté**, **Quantité**, **Je lâche**
+- Recliquer sur le tien → menu privé : **Quantité**, **Je lâche**
 - Cliquer sur celui d'un autre → on te dit qui l'a pris
 
 ### Installation
@@ -42,11 +42,11 @@ Slash commands (optionnel) :
 | `burger` / `/burger tableau` | tous | Affiche le tableau (sans boutons) |
 | `burger prend <ingrédient> [quantité]` | tous | Prend un ingrédient |
 | `burger lache <ingrédient>` | tous (modo : n'importe lequel) | Libère un ingrédient |
-| `burger achete <ingrédient>` | tous (modo : n'importe lequel) | Coche / décoche acheté |
 | `burger quantite <ingrédient> <quantité>` | tous | Change la quantité |
 | `burger start [vider]` | modo | Poste le tableau interactif dans ce salon |
 | `burger assigne <ingrédient> <membre> [quantité]` | modo | Donne un ingrédient à quelqu'un |
 | `burger reset` | modo | Vide la répartition |
 
 Le nom d'ingrédient peut être partiel et sans accents : `oign`, `ched`, `pain`…
+Ingrédients : pain brioché, steak, cheddar, oignon frit, bacon, salade, cornichons, sauce.
 Un seul tableau actif par serveur. Il garde ses boutons après un redémarrage du bot.
