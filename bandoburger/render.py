@@ -121,11 +121,31 @@ def draw_bacon(c, ghost):
     c.put(lay)
 
 
+FRIED = [(150, 92, 30), (186, 118, 40), (214, 146, 58), (232, 174, 84), (246, 200, 118)]
+
+
 def draw_oignon(c, ghost):
+    """Oignons frits croustillants : un tas de petits copeaux dorés."""
+    import random
+    rnd = random.Random(7)  # toujours le même dessin
     lay, d = c.layer()
-    color = GHOST_LINE if ghost else COL["oignon"] + (255,)
-    for x in (150, 222, 294, 366, 438, 500):
-        d.ellipse(_s((x - 30, 230, x + 30, 252)), outline=color, width=7 * S)
+    # base irrégulière du tas
+    top = [(x, 232 - rnd.uniform(0, 7)) for x in range(104, 537, 12)]
+    base = top + [(536, 254), (104, 254)]
+    if ghost:
+        d.polygon(_pts(base), fill=GHOST_FILL, outline=GHOST_LINE, width=3 * S)
+        c.put(lay)
+        return
+    d.polygon(_pts(base), fill=FRIED[0] + (255,))
+    # copeaux : petits arcs courbés, du plus foncé (dessous) au plus clair (dessus)
+    for layer_i, col in enumerate(FRIED[1:]):
+        for _ in range(70):
+            x = rnd.uniform(108, 532)
+            y = rnd.uniform(228, 252) - layer_i * 1.5
+            w, h = rnd.uniform(14, 26), rnd.uniform(6, 12)
+            a0 = rnd.uniform(0, 360)
+            d.arc(_s((x - w / 2, y - h / 2, x + w / 2, y + h / 2)), a0, a0 + rnd.uniform(120, 220),
+                  fill=col + (255,), width=int(rnd.uniform(2.5, 4) * S))
     c.put(lay)
 
 
