@@ -1,0 +1,12 @@
+{
+  "author": ["mr-biggles"],
+  "name": "BandoBurger",
+  "short": "Qui ramène quoi pour le burger, avec le burger qui se monte en direct.",
+  "description": "Tableau interactif (boutons + commandes) pour répartir les ingrédients d'un BandoBurger. Une image du burger se construit couche par couche à mesure que les ingrédients sont pris.",
+  "install_msg": "BandoBurger installé ! Charge-le avec `[p]load bandoburger` puis lance `[p]burger start` dans le salon voulu.",
+  "requirements": ["Pillow"],
+  "tags": ["burger", "organisation", "fun", "liste"],
+  "min_bot_version": "3.5.0",
+  "type": "COG",
+  "end_user_data_statement": "Ce cog enregistre l'identifiant Discord des membres qui prennent un ingrédient, par serveur. Ces données sont supprimées sur demande."
+}
