@@ -28,6 +28,7 @@ COLOR = 0xF2A516
 TTL = 5  # secondes avant que les messages privés du bot disparaissent
 MENU_TTL = 30  # menu « tu es sur … » sans action
 MAX_TAKERS = 10  # personnes max sur un même ingrédient
+STICKY_DELAY = 4  # secondes de calme avant de redescendre le tableau en bas du salon (tant qu'il n'est pas plein)
 
 
 class Nope(Exception):
@@ -75,6 +76,10 @@ def normalize_items(raw: Optional[dict]) -> dict:
     return {k: upgrade_item(raw.get(k)) for k, _, _ in INGREDIENTS}
 
 
+def is_full(items: dict) -> bool:
+    return all(it["takers"] for it in items.values())
+
+
 def find_taker(it: dict, user_id: int) -> Optional[dict]:
     return next((t for t in it["takers"] if t["who"] == user_id), None)
 
@@ -96,8 +101,13 @@ class BandoBurger(commands.Cog):
         # ancien format (un seul tableau par serveur), gardé pour la migration
         self.config.register_guild(channel_id=None, message_id=None, items={})
         # un tableau par salon
-        self.config.register_channel(message_id=None, owner=None, items={})
+        self.config.register_channel(message_id=None, owner=None, items={}, sticky=True)
         self._locks: Dict[int, asyncio.Lock] = {}
+        self._sticky_tasks: Dict[int, asyncio.Task] = {}
+
+    async def cog_unload(self):
+        for task in self._sticky_tasks.values():
+            task.cancel()
 
     async def cog_load(self):
         await self._migrate_guild_panels()
@@ -109,7 +119,8 @@ class BandoBurger(commands.Cog):
             cid = data.get("channel_id")
             if cid and not await self.config.channel_from_id(cid).message_id():
                 await self.config.channel_from_id(cid).set(
-                    {"message_id": data.get("message_id"), "owner": None, "items": data.get("items") or {}})
+                    {"message_id": data.get("message_id"), "owner": None, "items": data.get("items") or {},
+                     "sticky": True})
             await self.config.guild_from_id(gid).clear()
 
     async def red_delete_data_for_user(self, *, requester, user_id: int):
@@ -201,6 +212,58 @@ class BandoBurger(commands.Cog):
         except discord.HTTPException:
             return False
         return True
+
+    # ---------- tableau toujours en bas du salon ----------
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.guild is None:
+            return
+        cid = message.channel.id
+        # le tableau lui-même (message du bot avec des boutons) ne déclenche rien
+        if message.author.id == self.bot.user.id and message.components:
+            return
+        conf = self.conf(cid)
+        mid = await conf.message_id()
+        if not mid or message.id == mid or not await conf.sticky():
+            return
+        if is_full(await self.get_items(cid)):
+            return  # burger complet : le tableau ne redescend plus
+        if await self.bot.cog_disabled_in_guild(self, message.guild):
+            return
+        old = self._sticky_tasks.get(cid)
+        if old and not old.done():
+            old.cancel()  # on attend que ça se calme avant de reposter
+        self._sticky_tasks[cid] = asyncio.create_task(self._repost_later(message.channel))
+
+    async def _repost_later(self, channel):
+        try:
+            await asyncio.sleep(STICKY_DELAY)
+            await self.repost(channel)
+        except asyncio.CancelledError:
+            pass
+
+    async def repost(self, channel) -> None:
+        """Reposte le tableau en dernier message du salon et supprime l'ancien."""
+        cid = channel.id
+        conf = self.conf(cid)
+        async with self._lock(cid):
+            mid = await conf.message_id()
+            if not mid or channel.last_message_id == mid:
+                return
+            items = await self.get_items(cid)
+            if is_full(items):
+                return
+            try:
+                new = await channel.send(embed=self.build_embed(items), file=await self.build_file(items),
+                                         view=PanelView(self, items), allowed_mentions=NO_PING)
+            except discord.HTTPException:
+                return
+            await conf.message_id.set(new.id)
+            try:
+                await channel.get_partial_message(mid).delete()
+            except discord.HTTPException:
+                pass
 
     # ---------- actions partagées (boutons + commandes) ----------
 
@@ -336,6 +399,20 @@ class BandoBurger(commands.Cog):
             taken = sum(1 for it in items.values() if it["takers"])
             lines.append(f"{ch.mention} — {taken}/{len(INGREDIENTS)} pris")
         await ctx.send("\n".join(lines) or "Aucun tableau en cours.", allowed_mentions=NO_PING)
+
+    @bando.command(name="collant")
+    @commands.guild_only()
+    async def bando_collant(self, ctx: commands.Context):
+        """(Organisateur ou modo) Active / désactive le tableau qui redescend en bas du salon tant qu'il n'est pas complet."""
+        cid = ctx.channel.id
+        if not await self.conf(cid).message_id():
+            return await ctx.send("Pas de tableau en cours ici.", ephemeral=True)
+        if not await self.can_manage(ctx.author, cid):
+            return await ctx.send("Seuls l'organisateur du tableau ou un modo peuvent changer ça.", ephemeral=True)
+        now = not await self.conf(cid).sticky()
+        await self.conf(cid).sticky.set(now)
+        await ctx.send("📌 Le tableau redescendra en bas du salon tant qu'il n'est pas complet." if now
+                       else "Le tableau ne redescend plus tout seul.")
 
     @bando.command(name="prend")
     @commands.guild_only()

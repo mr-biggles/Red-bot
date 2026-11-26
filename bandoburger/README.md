@@ -39,6 +39,7 @@ Slash commands (optionnel) :
 
 **Un tableau par salon** : `burger start` dans un autre salon crée un nouveau tableau, sans toucher aux autres.
 Celui qui lance le tableau en est l'**organisateur**.
+Tant qu'il manque des ingrédients, le tableau redescend tout seul en bas du salon quelques secondes après chaque message. Une fois complet, il ne bouge plus.
 
 | Commande | Qui | Effet |
 |---|---|---|
@@ -50,6 +51,7 @@ Celui qui lance le tableau en est l'**organisateur**.
 | `burger quantite <ingrédient> <quantité>` | tous | Change sa quantité |
 | `burger assigne <ingrédient> <membre> [quantité]` | organisateur / modo | Ajoute quelqu'un sur un ingrédient |
 | `burger reset` | organisateur / modo | Vide la répartition de ce salon |
+| `burger collant` | organisateur / modo | Active / désactive la redescente automatique du tableau |
 | `burger stop` | organisateur / modo | Clôture le tableau de ce salon (le message reste) |
 | `burger actifs` | tous | Liste les tableaux en cours sur le serveur |
 
