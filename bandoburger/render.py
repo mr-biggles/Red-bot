@@ -229,6 +229,12 @@ def render_burger(state):
 
 
     out = c.img.resize((W, H), Image.LANCZOS)
+    # recadrage serré et carré autour du burger (affiché en vignette dans Discord)
+    x0, y0, x1, y1 = out.getbbox() or (0, 0, W, H)
+    side = max(x1 - x0, y1 - y0) + 16
+    square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    square.alpha_composite(out.crop((x0, y0, x1, y1)), ((side - (x1 - x0)) // 2, (side - (y1 - y0)) // 2))
+    out = square.resize((320, 320), Image.LANCZOS)
     buf = io.BytesIO()
     out.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
