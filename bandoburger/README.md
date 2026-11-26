@@ -7,9 +7,9 @@ Cogs [Red-DiscordBot](https://github.com/Cog-Creators/Red-DiscordBot) (3.5+).
 Tableau « qui prend quoi » pour le BandoBurger. Tout le monde clique sur un ingrédient pour le prendre, et l'image du burger se monte couche par couche.
 
 - ⬜ bouton gris = libre · 🟦 bleu = pris
-- Cliquer sur un ingrédient libre → tu le prends
+- Cliquer sur un ingrédient → tu te mets dessus, même si quelqu'un l'a déjà (on peut partager le steak à plusieurs, chacun avec sa quantité)
 - Recliquer sur le tien → menu privé : **Quantité**, **Je lâche**
-- Cliquer sur celui d'un autre → on te dit qui l'a pris
+- Le bouton affiche ×2, ×3… quand plusieurs personnes sont dessus
 
 ### Installation
 
@@ -40,11 +40,11 @@ Slash commands (optionnel) :
 | Commande | Qui | Effet |
 |---|---|---|
 | `burger` / `/burger tableau` | tous | Affiche le tableau (sans boutons) |
-| `burger prend <ingrédient> [quantité]` | tous | Prend un ingrédient |
-| `burger lache <ingrédient>` | tous (modo : n'importe lequel) | Libère un ingrédient |
+| `burger prend <ingrédient> [quantité]` | tous | Se met sur un ingrédient (ou change sa quantité) |
+| `burger lache <ingrédient> [membre]` | tous (modo : peut retirer quelqu'un) | Se retire d'un ingrédient |
 | `burger quantite <ingrédient> <quantité>` | tous | Change la quantité |
 | `burger start [vider]` | modo | Poste le tableau interactif dans ce salon |
-| `burger assigne <ingrédient> <membre> [quantité]` | modo | Donne un ingrédient à quelqu'un |
+| `burger assigne <ingrédient> <membre> [quantité]` | modo | Ajoute quelqu'un sur un ingrédient |
 | `burger reset` | modo | Vide la répartition |
 
 Le nom d'ingrédient peut être partiel et sans accents : `oign`, `ched`, `pain`…

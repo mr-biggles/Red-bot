@@ -51,8 +51,31 @@ def find_key(text: str) -> str:
     raise Nope(f"Ingrédient « {text} » introuvable. Choix : {choix}")
 
 
+MAX_TAKERS = 10  # personnes max sur un même ingrédient
+
+
 def empty_item() -> dict:
-    return {"who": None, "qty": ""}
+    return {"takers": []}
+
+
+def upgrade_item(it: Optional[dict]) -> dict:
+    """Passe l'ancien format {who, qty, done} au format {takers: [{who, qty}]}."""
+    if not it:
+        return empty_item()
+    if "takers" in it:
+        return it
+    if it.get("who"):
+        return {"takers": [{"who": it["who"], "qty": it.get("qty", "")}]}
+    return empty_item()
+
+
+def find_taker(it: dict, user_id: int) -> Optional[dict]:
+    return next((t for t in it["takers"] if t["who"] == user_id), None)
+
+
+def fmt_takers(it: dict, skip: Optional[int] = None) -> str:
+    return ", ".join(f"<@{t['who']}>" + (f" · {t['qty']}" if t["qty"] else "")
+                     for t in it["takers"] if t["who"] != skip)
 
 
 class BandoBurger(commands.Cog):
@@ -70,12 +93,12 @@ class BandoBurger(commands.Cog):
 
     async def red_delete_data_for_user(self, *, requester, user_id: int):
         for gid, data in (await self.config.all_guilds()).items():
-            items = data.get("items") or {}
+            items = {k: upgrade_item(v) for k, v in (data.get("items") or {}).items()}
             changed = False
             for it in items.values():
-                if it.get("who") == user_id:
-                    it.update(empty_item())
-                    changed = True
+                before = len(it["takers"])
+                it["takers"] = [t for t in it["takers"] if t["who"] != user_id]
+                changed |= len(it["takers"]) != before
             if changed:
                 await self.config.guild_from_id(gid).items.set(items)
 
@@ -86,9 +109,7 @@ class BandoBurger(commands.Cog):
 
     async def get_items(self, guild: discord.Guild) -> dict:
         items = await self.config.guild(guild).items()
-        for k, _, _ in INGREDIENTS:
-            items.setdefault(k, empty_item())
-        return items
+        return {k: upgrade_item(items.get(k)) for k, _, _ in INGREDIENTS}
 
     async def is_mod(self, member: discord.Member) -> bool:
         return await self.bot.is_mod(member) or member.guild_permissions.manage_messages
@@ -108,13 +129,11 @@ class BandoBurger(commands.Cog):
         lines = []
         for k, label, emo in INGREDIENTS:
             it = items[k]
-            if it["who"]:
-                who = f"<@{it['who']}>"
-                qty = f" · {it['qty']}" if it["qty"] else ""
-                lines.append(f"{emo} **{label}** — {who}{qty}")
+            if it["takers"]:
+                lines.append(f"{emo} **{label}** — {fmt_takers(it)}")
             else:
                 lines.append(f"{emo} **{label}** — *personne pour l'instant*")
-        taken = sum(1 for it in items.values() if it["who"])
+        taken = sum(1 for it in items.values() if it["takers"])
         total = len(INGREDIENTS)
         if taken == total:
             title = "🍔 BandoBurger — burger complet !"
@@ -122,12 +141,12 @@ class BandoBurger(commands.Cog):
             title = "🍔 BandoBurger — qui prend quoi ?"
         embed = discord.Embed(title=title, description="\n".join(lines), color=COLOR)
         embed.set_footer(text=f"{taken}/{total} pris"
-                              " · clique sur un ingrédient pour le prendre")
+                              " · clique sur un ingrédient pour le prendre (à plusieurs, c'est possible)")
         embed.set_image(url="attachment://burger.png")
         return embed
 
     async def build_file(self, items: dict) -> discord.File:
-        state = {k: ("taken" if it["who"] else "free") for k, it in items.items()}
+        state = {k: ("taken" if it["takers"] else "free") for k, it in items.items()}
         png = await asyncio.get_running_loop().run_in_executor(None, render_burger, state)
         return discord.File(io.BytesIO(png), filename="burger.png")
 
@@ -155,35 +174,41 @@ class BandoBurger(commands.Cog):
 
     # ---------- actions partagées (boutons + commandes) ----------
 
-    def act_take(self, key: str, member: discord.Member, qty: Optional[str] = None, force=False):
+    def act_take(self, key: str, member: discord.Member, qty: Optional[str] = None):
+        """Ajoute member sur l'ingrédient (ou met à jour sa quantité s'il y est déjà)."""
         def fn(items):
             it = items[key]
-            if it["who"] and it["who"] != member.id and not force:
-                raise Nope(f"**{LABEL[key]}** est déjà pris par <@{it['who']}>.")
-            it["who"] = member.id
-            if qty is not None:
-                it["qty"] = qty[:60]
-            return f"{EMOJI[key]} **{LABEL[key]}** → {member.mention}"
+            me = find_taker(it, member.id)
+            if me:
+                if qty is None:
+                    raise Nope(f"{member.mention} est déjà sur **{LABEL[key]}**.")
+                me["qty"] = qty.strip()[:60]
+                return f"{EMOJI[key]} Quantité de {member.mention} pour **{LABEL[key]}** : {me['qty'] or 'retirée'}"
+            if len(it["takers"]) >= MAX_TAKERS:
+                raise Nope(f"Déjà {MAX_TAKERS} personnes sur **{LABEL[key]}**, ça suffit 😄")
+            others = fmt_takers(it)
+            it["takers"].append({"who": member.id, "qty": (qty or "").strip()[:60]})
+            return f"{EMOJI[key]} **{LABEL[key]}** → {member.mention}" + (f" (avec {others})" if others else "")
         return fn
 
-    def act_release(self, key: str, member: discord.Member, force=False):
+    def act_release(self, key: str, member: discord.Member):
         def fn(items):
             it = items[key]
-            if not it["who"]:
-                raise Nope(f"Personne n'a pris **{LABEL[key]}**.")
-            if it["who"] != member.id and not force:
-                raise Nope(f"**{LABEL[key]}** est à <@{it['who']}>, pas à toi.")
-            items[key] = empty_item()
-            return f"{EMOJI[key]} **{LABEL[key]}** est de nouveau libre."
+            if not find_taker(it, member.id):
+                raise Nope(f"{member.mention} n'est pas sur **{LABEL[key]}**.")
+            it["takers"] = [t for t in it["takers"] if t["who"] != member.id]
+            rest = fmt_takers(it)
+            return (f"{EMOJI[key]} {member.mention} ne prend plus **{LABEL[key]}**. "
+                    + (f"Reste : {rest}" if rest else "Plus personne dessus."))
         return fn
 
-    def act_qty(self, key: str, member: discord.Member, qty: str, force=False):
+    def act_qty(self, key: str, member: discord.Member, qty: str):
         def fn(items):
-            it = items[key]
-            if it["who"] != member.id and not force:
-                raise Nope(f"Tu n'as pas pris **{LABEL[key]}**.")
-            it["qty"] = qty.strip()[:60]
-            return f"{EMOJI[key]} Quantité de **{LABEL[key]}** : {it['qty'] or 'retirée'}"
+            me = find_taker(items[key], member.id)
+            if not me:
+                raise Nope(f"Tu n'es pas sur **{LABEL[key]}**. Prends-le d'abord.")
+            me["qty"] = qty.strip()[:60]
+            return f"{EMOJI[key]} Ta quantité pour **{LABEL[key]}** : {me['qty'] or 'retirée'}"
         return fn
 
     # ---------- commandes ----------
@@ -242,7 +267,10 @@ class BandoBurger(commands.Cog):
     @bando.command(name="prend")
     @commands.guild_only()
     async def bando_prend(self, ctx: commands.Context, ingredient: str, *, quantite: Optional[str] = None):
-        """Tu prends un ingrédient. Ex : `burger prend bacon 2 paquets`"""
+        """Tu prends un ingrédient, seul ou à plusieurs. Ex : `burger prend steak 1 paquet`
+
+        Si tu es déjà dessus, ça met juste à jour ta quantité.
+        """
         try:
             key = find_key(ingredient)
         except Nope as e:
@@ -251,13 +279,16 @@ class BandoBurger(commands.Cog):
 
     @bando.command(name="lache")
     @commands.guild_only()
-    async def bando_lache(self, ctx: commands.Context, ingredient: str):
-        """Tu ne prends plus cet ingrédient (les modos peuvent libérer n'importe lequel)."""
+    async def bando_lache(self, ctx: commands.Context, ingredient: str, membre: Optional[discord.Member] = None):
+        """Tu ne prends plus cet ingrédient. Les modos peuvent retirer quelqu'un : `burger lache steak @pseudo`"""
         try:
             key = find_key(ingredient)
         except Nope as e:
             return await ctx.send(str(e), ephemeral=True)
-        await self._run(ctx, self.act_release(key, ctx.author, force=await self.is_mod(ctx.author)))
+        target = membre or ctx.author
+        if target != ctx.author and not await self.is_mod(ctx.author):
+            return await ctx.send("Seuls les modos peuvent retirer quelqu'un d'autre.", ephemeral=True)
+        await self._run(ctx, self.act_release(key, target))
 
     @bando.command(name="quantite")
     @commands.guild_only()
@@ -267,19 +298,19 @@ class BandoBurger(commands.Cog):
             key = find_key(ingredient)
         except Nope as e:
             return await ctx.send(str(e), ephemeral=True)
-        await self._run(ctx, self.act_qty(key, ctx.author, quantite, force=await self.is_mod(ctx.author)))
+        await self._run(ctx, self.act_qty(key, ctx.author, quantite))
 
     @bando.command(name="assigne")
     @commands.guild_only()
     @commands.mod_or_permissions(manage_messages=True)
     async def bando_assigne(self, ctx: commands.Context, ingredient: str, membre: discord.Member,
                             *, quantite: Optional[str] = None):
-        """(Modo) Donne un ingrédient à quelqu'un."""
+        """(Modo) Ajoute quelqu'un sur un ingrédient, ou change sa quantité."""
         try:
             key = find_key(ingredient)
         except Nope as e:
             return await ctx.send(str(e), ephemeral=True)
-        await self._run(ctx, self.act_take(key, membre, quantite, force=True))
+        await self._run(ctx, self.act_take(key, membre, quantite))
 
     @bando.command(name="reset")
     @commands.guild_only()
@@ -307,12 +338,14 @@ class PanelView(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
         for i, (key, label, emo) in enumerate(INGREDIENTS):
-            it = (items or {}).get(key) or empty_item()
-            if it["who"]:
+            it = upgrade_item((items or {}).get(key))
+            n = len(it["takers"])
+            if n:
                 style = discord.ButtonStyle.primary
             else:
                 style = discord.ButtonStyle.secondary
-            btn = discord.ui.Button(label=label.split(" (")[0], emoji=emo, style=style,
+            short = label.split(" (")[0] + (f" ×{n}" if n > 1 else "")
+            btn = discord.ui.Button(label=short, emoji=emo, style=style,
                                     custom_id=f"bandoburger:{key}", row=i // 4)
             btn.callback = self._make_callback(key)
             self.add_item(btn)
@@ -331,25 +364,23 @@ class PanelView(discord.ui.View):
                 "Ce tableau n'est plus actif, utilise le plus récent.", ephemeral=True, delete_after=TTL)
 
         it = (await cog.get_items(guild))[key]
-        if it["who"] == user.id:
+        if find_taker(it, user.id):
             view = MineView(cog, key, interaction)
             return await interaction.response.send_message(
-                f"{EMOJI[key]} **{LABEL[key]}**, c'est toi qui le ramènes. Tu veux faire quoi ?",
+                f"{EMOJI[key]} Tu es sur **{LABEL[key]}**. Tu veux faire quoi ?",
                 view=view, ephemeral=True)
-        if it["who"]:
-            return await interaction.response.send_message(
-                f"{EMOJI[key]} **{LABEL[key]}** est déjà pris par <@{it['who']}>.",
-                ephemeral=True, allowed_mentions=NO_PING, delete_after=TTL)
-
         await interaction.response.defer()
         try:
             await cog.mutate(guild, cog.act_take(key, user))
+            it = (await cog.get_items(guild))[key]
         except Nope as e:
             msg = await interaction.followup.send(str(e), ephemeral=True, allowed_mentions=NO_PING, wait=True)
             return await msg.delete(delay=TTL)
         msg = await interaction.followup.send(
-            f"{EMOJI[key]} Tu prends **{LABEL[key]}**. Reclique dessus pour changer la quantité ou le lâcher.",
-            ephemeral=True, wait=True)
+            f"{EMOJI[key]} Tu prends **{LABEL[key]}**"
+            + (f" avec {others}" if (others := fmt_takers(it, skip=user.id)) else "")
+            + ". Reclique dessus pour mettre ta quantité ou le lâcher.",
+            ephemeral=True, allowed_mentions=NO_PING, wait=True)
         await msg.delete(delay=TTL)
 
 
@@ -383,7 +414,8 @@ class MineView(discord.ui.View):
     @discord.ui.button(label="Quantité", emoji="✏️", style=discord.ButtonStyle.primary)
     async def quantity(self, interaction: discord.Interaction, button: discord.ui.Button):
         items = await self.cog.get_items(interaction.guild)
-        await interaction.response.send_modal(QtyModal(self.cog, self.key, items[self.key]["qty"], self))
+        me = find_taker(items[self.key], interaction.user.id)
+        await interaction.response.send_modal(QtyModal(self.cog, self.key, me["qty"] if me else "", self))
 
     @discord.ui.button(label="Je lâche", emoji="↩️", style=discord.ButtonStyle.danger)
     async def release(self, interaction: discord.Interaction, button: discord.ui.Button):
