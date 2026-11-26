@@ -37,16 +37,22 @@ Slash commands (optionnel) :
 
 ### Commandes
 
+**Un tableau par salon** : `burger start` dans un autre salon crée un nouveau tableau, sans toucher aux autres.
+Celui qui lance le tableau en est l'**organisateur**.
+
 | Commande | Qui | Effet |
 |---|---|---|
-| `burger` / `/burger tableau` | tous | Affiche le tableau (sans boutons) |
+| `burger start` | tous | Lance un tableau dans ce salon (ou le reposte en bas s'il existe déjà) |
+| `burger start True` | organisateur / modo | Relance le tableau de ce salon à zéro |
+| `burger` / `/burger tableau` | tous | Affiche le tableau de ce salon (sans boutons) |
 | `burger prend <ingrédient> [quantité]` | tous | Se met sur un ingrédient (ou change sa quantité) |
-| `burger lache <ingrédient> [membre]` | tous (modo : peut retirer quelqu'un) | Se retire d'un ingrédient |
-| `burger quantite <ingrédient> <quantité>` | tous | Change la quantité |
-| `burger start [vider]` | modo | Poste le tableau interactif dans ce salon |
-| `burger assigne <ingrédient> <membre> [quantité]` | modo | Ajoute quelqu'un sur un ingrédient |
-| `burger reset` | modo | Vide la répartition |
+| `burger lache <ingrédient> [membre]` | tous (organisateur / modo : peut retirer quelqu'un) | Se retire d'un ingrédient |
+| `burger quantite <ingrédient> <quantité>` | tous | Change sa quantité |
+| `burger assigne <ingrédient> <membre> [quantité]` | organisateur / modo | Ajoute quelqu'un sur un ingrédient |
+| `burger reset` | organisateur / modo | Vide la répartition de ce salon |
+| `burger stop` | organisateur / modo | Clôture le tableau de ce salon (le message reste) |
+| `burger actifs` | tous | Liste les tableaux en cours sur le serveur |
 
 Le nom d'ingrédient peut être partiel et sans accents : `oign`, `ched`, `pain`…
 Ingrédients : pain brioché, steak haché à l'oignon, cheddar, oignons frits, bacon, salade, cornichons, sauce burger, sauce BBQ.
-Un seul tableau actif par serveur. Il garde ses boutons après un redémarrage du bot.
+Les tableaux gardent leurs boutons après un redémarrage du bot.
