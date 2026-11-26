@@ -14,7 +14,7 @@ INGREDIENTS = [
     ("pain", "Pain burger (brioché)", "🍞"),
     ("steak", "Steak", "🥩"),
     ("cheddar", "Cheddar", "🧀"),
-    ("oignon", "Oignon frit", "🧅"),
+    ("oignon", "Oignons frits", "🧅"),
     ("bacon", "Bacon", "🥓"),
     ("salade", "Salade", "🥬"),
     ("cornichon", "Cornichons", "🥒"),

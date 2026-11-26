@@ -48,5 +48,5 @@ Slash commands (optionnel) :
 | `burger reset` | modo | Vide la répartition |
 
 Le nom d'ingrédient peut être partiel et sans accents : `oign`, `ched`, `pain`…
-Ingrédients : pain brioché, steak, cheddar, oignon frit, bacon, salade, cornichons, sauce.
+Ingrédients : pain brioché, steak, cheddar, oignons frits, bacon, salade, cornichons, sauce.
 Un seul tableau actif par serveur. Il garde ses boutons après un redémarrage du bot.
