@@ -183,7 +183,7 @@ class BandoBurger(commands.Cog):
         embed = discord.Embed(title=title, description="\n".join(lines), color=COLOR)
         embed.set_footer(text=f"{taken}/{total} pris"
                               " · clique sur un ingrédient pour le prendre (à plusieurs, c'est possible)")
-        embed.set_image(url="attachment://burger.png")
+        embed.set_thumbnail(url="attachment://burger.png")  # petit, à droite de la liste
         return embed
 
     async def build_file(self, items: dict) -> discord.File:
