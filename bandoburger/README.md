@@ -39,7 +39,7 @@ Slash commands (optionnel) :
 
 **Un tableau par salon** : `burger start` dans un autre salon crée un nouveau tableau, sans toucher aux autres.
 Celui qui lance le tableau en est l'**organisateur**.
-Tant qu'il manque des ingrédients, le tableau redescend tout seul en bas du salon quelques secondes après chaque message. Une fois complet, il ne bouge plus.
+Tant qu'il manque des ingrédients, le tableau redescend tout seul en bas du salon tous les 6 messages environ. Une fois complet, il ne bouge plus.
 
 | Commande | Qui | Effet |
 |---|---|---|
