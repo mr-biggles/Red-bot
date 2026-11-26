@@ -4,7 +4,7 @@ Cogs [Red-DiscordBot](https://github.com/Cog-Creators/Red-DiscordBot) (3.5+).
 
 ## BandoBurger
 
-Tableau « qui prend quoi » pour le BandoBurger. Tout le monde clique sur un ingrédient pour le prendre, et l'image du burger se monte couche par couche.
+Tableau « qui achète quoi » pour le BandoBurger. Tout le monde clique sur un ingrédient pour le prendre, et l'image du burger se monte couche par couche.
 
 - ⬜ bouton gris = libre · 🟦 bleu = pris
 - Cliquer sur un ingrédient → tu te mets dessus, même si quelqu'un l'a déjà (on peut partager le steak à plusieurs, chacun avec sa quantité)

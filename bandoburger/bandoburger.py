@@ -181,7 +181,7 @@ class BandoBurger(commands.Cog):
                 lines.append(f"{emo} **{label}** — *personne pour l'instant*")
         taken = sum(1 for it in items.values() if it["takers"])
         total = len(INGREDIENTS)
-        title = "🍔 BandoBurger — burger complet !" if taken == total else "🍔 BandoBurger — qui prend quoi ?"
+        title = "🍔 BandoBurger — burger complet !" if taken == total else "🍔 BandoBurger — qui achète quoi ?"
         embed = discord.Embed(title=title, description="\n".join(lines), color=COLOR)
         embed.set_footer(text=f"{taken}/{total} pris"
                               " · clique sur un ingrédient pour le prendre (à plusieurs, c'est possible)")
