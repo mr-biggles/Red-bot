@@ -12,13 +12,13 @@ from .render import render_burger
 # (clé, nom affiché, emoji)
 INGREDIENTS = [
     ("pain", "Pain burger (brioché)", "🍞"),
-    ("steak", "Steak", "🥩"),
+    ("steak", "Steak haché à l'oignon", "🥩"),
     ("cheddar", "Cheddar", "🧀"),
     ("oignon", "Oignons frits", "🧅"),
     ("bacon", "Bacon", "🥓"),
     ("salade", "Salade", "🥬"),
     ("cornichon", "Cornichons", "🥒"),
-    ("sauce", "Sauce", "🥫"),
+    ("sauce", "Sauces (burger + BBQ)", "🥫"),
 ]
 LABEL = {k: l for k, l, _ in INGREDIENTS}
 EMOJI = {k: e for k, _, e in INGREDIENTS}
